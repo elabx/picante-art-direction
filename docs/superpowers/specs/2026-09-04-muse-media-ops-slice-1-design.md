@@ -27,7 +27,8 @@ Product name in the UI: **Media Ops** (brand logo + "Media Ops" wordmark as in t
 | UI | Two Filament panels with one custom theme approximating the Modernist design system (Archivo, zero radius, 2px rules, red accent `#ec3013`, ground `#f3f2f2`, ink `#201e1d`) |
 | Generator form | Schema-driven: rendered from the Krea node app's `input_openapi_schema`, with per-field Art Director overrides |
 | Campaign shape | Login → campaign list → Generator directly. No "addons" dashboard. A campaign holds several switchable generator pipelines, at most one editor pipeline (variations), and at most one upscaler pipeline (4K delivery renditions) |
-| Image storage | All image handling goes through S3-compatible object storage in every environment (AWS S3, Cloudflare R2, or MinIO for local dev). Every Krea result is downloaded into a private bucket. Krea URL kept as reference |
+| Image storage | All image handling goes through object storage in every environment: AWS S3 in staging/production, MinIO in local dev. Every Krea result is downloaded into a private bucket. Krea URL kept as reference |
+| Image delivery | Private S3 bucket behind a CloudFront distribution; browsers receive CloudFront signed URLs (10 min). Dev uses S3/MinIO presigned URLs through the same interface |
 | Job completion | Queue worker polls Krea `GET /jobs/{id}`. Webhooks not used (unsigned) |
 | Krea credentials | Per-brand encrypted key with studio-wide fallback in `.env`. Never exposed to the browser |
 | Database | MySQL |
@@ -97,7 +98,9 @@ Upscales reuse the chain with `kind = upscale`, the campaign's upscaler pipeline
 
 ### 4.5 Storage
 
-All images (Editor uploads, downloaded pieces, campaign covers, brand logos) live in S3-compatible object storage in every environment; no local-disk image handling. Laravel `s3` driver with two private disks, `inputs` and `pieces`, pointing at prefixes of one bucket (or two buckets), configured only through `.env`. Local development runs MinIO in Docker (`docker compose up minio`) or points at a dev bucket. Images are served to the browser with `Storage::temporaryUrl()` (presigned, 10 minutes); Filament `FileUpload` writes straight to the `inputs` disk. Uploaded inputs are read back from object storage into base64 data URLs when sent to Krea, as in the prototype; switching to presigned URLs as Krea inputs is a later optimisation once confirmed against the schema.
+All images (Editor uploads, downloaded pieces, campaign covers, brand logos) live in object storage in every environment; no local-disk image handling. Laravel `s3` driver with two private disks, `inputs` and `pieces`, pointing at prefixes of one private bucket, configured only through `.env`. Local development runs MinIO in Docker (`docker compose up minio`).
+
+**Delivery.** In staging and production the bucket sits behind a CloudFront distribution with an origin access control, and every image URL handed to the browser is a **CloudFront signed URL** (canned policy, 10 minute expiry) produced with the AWS SDK's `UrlSigner` from a CloudFront key pair whose ID and private key live in `.env`. A `SignedUrlProvider` interface has two implementations: `CloudFrontSignedUrlProvider` (staging/production) and `PresignedS3UrlProvider` (dev, wraps `Storage::temporaryUrl()` against MinIO). The implementation is chosen by `config('media.url_provider')`. Filament `FileUpload` writes straight to the `inputs` disk and previews through the same provider. Uploaded inputs are read back from object storage into base64 data URLs when sent to Krea, as in the prototype; switching to presigned URLs as Krea inputs is a later optimisation once confirmed against the schema.
 
 ## 5. Data model
 
@@ -156,12 +159,12 @@ Krea HTTP status → Spanish message (from the prototype): 400 "Solicitud invál
 - Krea keys are encrypted at rest (`encrypted` cast) and never rendered after save.
 - Editors are scoped by tenancy; every `/app` query goes through the tenant relationship. Feature tests assert cross-brand access fails.
 - Uploaded inputs are validated as images ≤ 20 MB and stored in a private bucket; nothing image-related is ever written to the web server's disk.
-- Signed URLs for piece downloads expire after 10 minutes.
+- CloudFront signed URLs (and dev presigned URLs) expire after 10 minutes; the bucket itself is private and only reachable through CloudFront's origin access control.
 - The prototype's hard-coded Krea key must be rotated by the user; the new key is entered only in `/admin` or `.env`.
 
 ## 9. Testing
 
-- **Unit:** `PipelineSchemaSync` (new/changed/removed properties, default roles, override preservation), `PipelineFormBuilder` (each type, hidden merge, required), Krea status → message map, version-chain query including upscales.
+- **Unit:** `PipelineSchemaSync` (new/changed/removed properties, default roles, override preservation), `PipelineFormBuilder` (each type, hidden merge, required), Krea status → message map, version-chain query including upscales, `CloudFrontSignedUrlProvider` produces a URL with `Expires`, `Signature`, and `Key-Pair-Id` for a given path.
 - **Feature (Pest + `FakeKreaClient`):** full chain series generation creates pieces on `Storage::fake('pieces')`; edit generation sets `parent_piece_id`/`root_piece_id` and kind `edit`; upscale generation creates a kind `upscale` child that appears in the version chain with a 4K badge; poll backoff and timeout; download retry; Editor cannot open another brand's campaign or `/admin`; Art Director CRUD for every resource; pipeline save fails on schema error; one-editor-per-campaign validation.
 - **Livewire:** Generator submit with a missing required field shows validation; Generator submit with valid data dispatches the chain; Viewer edit without editor pipeline is disabled; Viewer "Entregar en 4K" without upscaler is disabled.
 
