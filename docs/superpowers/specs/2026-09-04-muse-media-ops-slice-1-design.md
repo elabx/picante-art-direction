@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-Picante (the studio) fixes the art direction of a brand's imagery once as a Krea node app. Brand-side Editors then produce many pieces by filling a short form. This slice builds the Laravel/Filament product that replaces the browser-only prototype: a multi-brand workspace where Art Directors register Krea pipelines per campaign and Editors generate, browse, edit, and download pieces, with every generated image copied into storage the studio controls.
+Picante (the studio) fixes the art direction of a brand's imagery once as a Krea node app. Brand-side Editors then produce many pieces by filling a short form. This slice builds the Laravel/Filament product that replaces the browser-only prototype: a multi-brand workspace where Art Directors register Krea pipelines per campaign and Editors generate pieces, edit them into variations, upscale any of them to a 4K delivery rendition, and download, with every generated image copied into storage the studio controls.
 
 Product name in the UI: **Media Ops** (brand logo + "Media Ops" wordmark as in the prototype). All UI text is Spanish.
 
@@ -26,7 +26,7 @@ Product name in the UI: **Media Ops** (brand logo + "Media Ops" wordmark as in t
 | Tenancy | By Brand in `/app`; none in `/admin` |
 | UI | Two Filament panels with one custom theme approximating the Modernist design system (Archivo, zero radius, 2px rules, red accent `#ec3013`, ground `#f3f2f2`, ink `#201e1d`) |
 | Generator form | Schema-driven: rendered from the Krea node app's `input_openapi_schema`, with per-field Art Director overrides |
-| Campaign shape | Login → campaign list → Generator directly. No "addons" dashboard. A campaign holds several switchable generator pipelines and at most one editor pipeline |
+| Campaign shape | Login → campaign list → Generator directly. No "addons" dashboard. A campaign holds several switchable generator pipelines, at most one editor pipeline (variations), and at most one upscaler pipeline (4K delivery renditions) |
 | Image storage | Every Krea result is downloaded into our filesystem disk (local in dev, S3-compatible in prod). Krea URL kept as reference |
 | Job completion | Queue worker polls Krea `GET /jobs/{id}`. Webhooks not used (unsigned) |
 | Krea credentials | Per-brand encrypted key with studio-wide fallback in `.env`. Never exposed to the browser |
@@ -91,7 +91,9 @@ Hidden fields are not rendered; on submit their `fixed_value` is merged into the
 3. `PollGenerationJob`: calls `getJob`. Non-terminal → stores Krea status text and re-dispatches itself with delay 4 s (8 s after 2 minutes, 15 s after 5 minutes); marks `status = processing`. Terminal `completed` → `status = downloading`, dispatches `DownloadPiecesJob`. Terminal `failed` / `cancelled` → `status = failed`. Older than 10 minutes → `status = failed`, `error_message = "Tiempo de espera agotado."`, `retryable = true`.
 4. `DownloadPiecesJob`: for each URL in `result.urls` (array or object values, deduplicated), downloads bytes, stores under `pieces/{brand}/{campaign}/{generation}/{index}.{ext}`, reads dimensions, creates `Piece`. Three tries per file. Then `status = completed`. Krea URL is kept on the Piece regardless.
 
-Edits reuse the same chain with `kind = edit`, the campaign's editor pipeline, `parent_piece_id` set, and the parent piece's bytes supplied to the pipeline's field with role `image`, the instruction to the field with role `prompt`. Resulting pieces get `version_of_piece_id` = the parent's root.
+Edits reuse the same chain with `kind = edit`, the campaign's editor pipeline, `parent_piece_id` set, and the parent piece's bytes supplied to the pipeline's field with role `image`, the instruction to the field with role `prompt`. Resulting pieces get `kind = edit`, `parent_piece_id` = the edited piece, `root_piece_id` = the edited piece's root.
+
+Upscales reuse the chain with `kind = upscale`, the campaign's upscaler pipeline, `parent_piece_id` set, and the piece's bytes supplied to the field with role `image`. The upscaler has no prompt; any other visible fields are shown in a small confirm dialog before running. Resulting pieces get `kind = upscale`, `parent_piece_id` = the upscaled piece, same `root_piece_id`. An upscale is a delivery rendition, not a new variation, so it does not appear in the version strip; it appears as the piece's "4K" badge and download.
 
 ### 4.5 Storage
 
@@ -105,12 +107,12 @@ All tables have `id`, `created_at`, `updated_at`; soft deletes where noted.
 - **users** — Laravel defaults + `role` enum(`art_director`,`editor`).
 - **brand_user** — `brand_id`, `user_id`, unique pair.
 - **campaigns** — `brand_id`, `name`, `slug`, `description` nullable, `status` enum(`draft`,`in_production`,`in_review`,`archived`), `cover_path` nullable, `starts_on` / `ends_on` nullable dates, `default_pipeline_id` nullable, soft deletes.
-- **pipelines** — `campaign_id`, `kind` enum(`generator`,`editor`), `label`, `krea_version_id`, `input_schema` json nullable, `schema_fetched_at` nullable, `sort_order` int, `is_active` bool. Constraint: at most one active `editor` per campaign (enforced in validation).
+- **pipelines** — `campaign_id`, `kind` enum(`generator`,`editor`,`upscaler`), `label`, `krea_version_id`, `input_schema` json nullable, `schema_fetched_at` nullable, `sort_order` int, `is_active` bool. Constraint: at most one active `editor` and at most one active `upscaler` per campaign (enforced in validation).
 - **pipeline_fields** — `pipeline_id`, `name`, `type` enum(`string`,`image`,`number`,`boolean`,`unknown`), `required` bool, `label_override` nullable, `help_text` nullable, `visibility` enum(`visible`,`hidden`), `fixed_value` text nullable, `role` enum(`prompt`,`image`,`none`), `stale` bool default false, `sort_order`. Unique (`pipeline_id`,`name`).
-- **generations** — `campaign_id`, `pipeline_id`, `user_id`, `kind` enum(`series`,`edit`), `parent_piece_id` nullable, `inputs` json, `krea_job_id` nullable, `status` enum(`pending`,`submitted`,`processing`,`downloading`,`completed`,`failed`), `krea_status` string nullable, `queue_position` int nullable, `error_message` nullable, `retryable` bool default false, `seen_at` nullable, `submitted_at` / `completed_at` nullable.
-- **pieces** — `generation_id`, `campaign_id`, `storage_path`, `krea_url`, `width` / `height` nullable, `bytes` nullable, `index` int, `version_of_piece_id` nullable, `selected` bool default false.
+- **generations** — `campaign_id`, `pipeline_id`, `user_id`, `kind` enum(`series`,`edit`,`upscale`), `parent_piece_id` nullable, `inputs` json, `krea_job_id` nullable, `status` enum(`pending`,`submitted`,`processing`,`downloading`,`completed`,`failed`), `krea_status` string nullable, `queue_position` int nullable, `error_message` nullable, `retryable` bool default false, `seen_at` nullable, `submitted_at` / `completed_at` nullable.
+- **pieces** — `generation_id`, `campaign_id`, `kind` enum(`original`,`edit`,`upscale`), `parent_piece_id` nullable, `root_piece_id` nullable, `storage_path`, `krea_url`, `width` / `height` nullable, `bytes` nullable, `index` int, `selected` bool default false.
 
-Derived: a *series* is a `generations` row of kind `series` with its pieces. A piece's *version chain* is all pieces whose `version_of_piece_id` equals the root piece's id (the root itself has null), ordered by `created_at`.
+Derived: a *series* is a `generations` row of kind `series` with its pieces. A piece's *version chain* is the root piece plus all pieces of kind `edit` whose `root_piece_id` equals the root's id (the root itself has `root_piece_id` null), ordered by `created_at`. A piece's *4K rendition* is its most recent child of kind `upscale`.
 
 ## 6. Screens
 
@@ -124,8 +126,8 @@ Derived: a *series* is a `generations` row of kind `series` with its pieces. A p
    - Left column: the schema-driven form (§4.3), a footer line with the library summary, and the primary button "Generar serie →". Submit dispatches the chain and clears nothing, so the Editor can queue another series.
    - Right column "Imágenes generadas": empty state; running generations as placeholder tiles with the Krea status text; "Última serie" (latest completed series, up to 4 thumbs); error block for the latest failed generation; "Series anteriores" (up to 25 thumbs) with "Ver galería".
    - Livewire `wire:poll.3s` is active only while any generation for this campaign is non-terminal.
-4. **Galería** (`/app/{brand}/campaigns/{campaign}/gallery`). Filter chips `Todas · Series · Ediciones`; grid of pieces with badge (`S01`, `v02`) and caption; side card with "Ficha del proyecto" (pipeline label, latest prompt), "Series" rows, and actions "Generar más" and "Descargar selección" (zips selected pieces via a queued export and a download link). Empty state links back to the Generator.
-5. **Visor** (modal over Generator or Gallery). Left: the piece, version thumbnails, `vNN` label. Right: kicker + "Editar la pieza", the originating prompt, "Qué cambias" textarea with quick chips (Cambiar fondo, Quitar objeto, Ajustar luz, Ampliar encuadre) that append text, "Aplicar edición →" and cost line, progress block while the edit runs, error block, "Versiones de esta pieza" list, "Marcar seleccionada" toggle, "Descargar". If the campaign has no active editor pipeline, the edit block is replaced by "Esta campaña no tiene editor configurado."
+4. **Galería** (`/app/{brand}/campaigns/{campaign}/gallery`). Filter chips `Todas · Series · Ediciones · 4K`; grid of pieces with badge (`S01`, `v02`) and caption; side card with "Ficha del proyecto" (pipeline label, latest prompt), "Series" rows, and actions "Generar más" and "Descargar selección" (zips selected pieces via a queued export and a download link). Empty state links back to the Generator.
+5. **Visor** (modal over Generator or Gallery). Left: the piece, version thumbnails, `vNN` label. Right: kicker + "Editar la pieza", the originating prompt, "Qué cambias" textarea with quick chips (Cambiar fondo, Quitar objeto, Ajustar luz, Ampliar encuadre) that append text, "Aplicar edición →" and cost line, progress block while the edit runs, error block, "Versiones de esta pieza" list, "Marcar seleccionada" toggle, "Descargar". Below: an **Entrega** block with "Entregar en 4K →" that runs the upscaler on the piece currently shown; while running it shows progress, when done it shows the 4K rendition's dimensions and a "Descargar 4K" button, and the piece gets a "4K" badge in the gallery. If the campaign has no active editor pipeline, the edit block is replaced by "Esta campaña no tiene editor configurado."; likewise the Entrega block reads "Esta campaña no tiene upscaler configurado." when none is active.
 6. **Cola de trabajos.** Bell in the top bar with unseen count (generations by this user in this brand that are terminal and `seen_at` null). Drawer lists generations newest first with kind, status, label (prompt excerpt), detail, and thumbnails for completed ones; opening the drawer sets `seen_at`.
 7. **Ajustes.** Profile (name, email), password change, "Cerrar sesión". The usage meter and team list from the prototype are shown as static placeholders labelled "próximamente".
 
@@ -136,7 +138,7 @@ Filament resources, default Filament layouts under the shared theme:
 - **Brands** — CRUD; `krea_api_key` as a password field that is write-only; header action "Probar conexión" calls `GET /node-apps?limit=1` with the resolved key and reports success or the Krea error.
 - **Users** — CRUD; role select; brands multi-select shown for editors.
 - **Campaigns** — CRUD filtered by brand; relation manager **Pipelines**; read-only relation manager **Generations** (status, user, pipeline, error, timestamps) for support.
-- **Pipelines** (via relation manager and a standalone resource) — create form: kind, label, `krea_version_id`, sort order, active. On save, `PipelineSchemaSync` runs; failure blocks saving and shows the Krea error. Edit page shows a **Fields** table editor: name, type, required (read-only) and label override, help text, visibility, fixed value, role (editable). Header action "Refrescar esquema" re-syncs and flags stale fields. Validation: one active editor per campaign; exactly one field with role `prompt` for editor pipelines and at least one with role `image`.
+- **Pipelines** (via relation manager and a standalone resource) — create form: kind, label, `krea_version_id`, sort order, active. On save, `PipelineSchemaSync` runs; failure blocks saving and shows the Krea error. Edit page shows a **Fields** table editor: name, type, required (read-only) and label override, help text, visibility, fixed value, role (editable). Header action "Refrescar esquema" re-syncs and flags stale fields. Validation: one active editor and one active upscaler per campaign; editor pipelines need exactly one field with role `prompt` and at least one with role `image`; upscaler pipelines need at least one field with role `image`.
 
 ## 7. Error handling
 
@@ -159,9 +161,9 @@ Krea HTTP status → Spanish message (from the prototype): 400 "Solicitud invál
 
 ## 9. Testing
 
-- **Unit:** `PipelineSchemaSync` (new/changed/removed properties, default roles, override preservation), `PipelineFormBuilder` (each type, hidden merge, required), Krea status → message map, version-chain query.
-- **Feature (Pest + `FakeKreaClient`):** full chain series generation creates pieces on the fake disk; edit generation sets `version_of_piece_id`; poll backoff and timeout; download retry; Editor cannot open another brand's campaign or `/admin`; Art Director CRUD for every resource; pipeline save fails on schema error; one-editor-per-campaign validation.
-- **Livewire:** Generator submit with a missing required field shows validation; Generator submit with valid data dispatches the chain; Viewer edit without editor pipeline is disabled.
+- **Unit:** `PipelineSchemaSync` (new/changed/removed properties, default roles, override preservation), `PipelineFormBuilder` (each type, hidden merge, required), Krea status → message map, version-chain and 4K-rendition queries.
+- **Feature (Pest + `FakeKreaClient`):** full chain series generation creates pieces on the fake disk; edit generation sets `parent_piece_id`/`root_piece_id` and kind `edit`; upscale generation creates a kind `upscale` child and is excluded from the version chain; poll backoff and timeout; download retry; Editor cannot open another brand's campaign or `/admin`; Art Director CRUD for every resource; pipeline save fails on schema error; one-editor-per-campaign validation.
+- **Livewire:** Generator submit with a missing required field shows validation; Generator submit with valid data dispatches the chain; Viewer edit without editor pipeline is disabled; Viewer "Entregar en 4K" without upscaler is disabled.
 
 ## 10. Out of scope for slice 1 (later sub-projects)
 
