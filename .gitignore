@@ -1,2 +1,5 @@
 .DS_Store
 **/.DS_Store
+
+# Design prototypes stay local (contain credentials); not part of the repo for now
+prototypes/
