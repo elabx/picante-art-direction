@@ -1,0 +1,179 @@
+# Muse Media Ops — Slice 1 design
+
+**Date:** 2026-09-04
+**Status:** approved in conversation, pending written review
+**Source prototypes:** `prototypes/Muse App.html` (full canvas), `prototypes/App Krea con flujos de usuarios/` (canvas source, design system, and the four earlier single-page flows: Inicio, Fotos Skechers, Generador Invierno, Historial)
+
+## 1. Purpose
+
+Picante (the studio) fixes the art direction of a brand's imagery once as a Krea node app. Brand-side Editors then produce many pieces by filling a short form. This slice builds the Laravel/Filament product that replaces the browser-only prototype: a multi-brand workspace where Art Directors register Krea pipelines per campaign and Editors generate, browse, edit, and download pieces, with every generated image copied into storage the studio controls.
+
+Product name in the UI: **Media Ops** (brand logo + "Media Ops" wordmark as in the prototype). All UI text is Spanish.
+
+## 2. Roles and tenancy
+
+- **Art Director** (studio staff). Uses the `/admin` panel. Sees every brand. Manages brands, users, campaigns, and pipelines (Krea node-app IDs and their field configuration).
+- **Editor** (brand staff). Uses the `/app` panel. Belongs to one or more brands via a pivot. Filament tenancy scopes everything in `/app` to the current brand; a tenant switcher appears when the Editor belongs to more than one brand.
+- A single `users.role` column (`art_director` | `editor`) decides panel access. Slice 1 has no finer permissions.
+- Sign-in is email and password on both panels (Filament's login page, restyled). Art Directors create Editor accounts and assign brands. Corporate SSO is out of scope.
+
+## 3. Decisions taken
+
+| Topic | Decision |
+| --- | --- |
+| Framework | Laravel 12, Filament 5 (two panels), Livewire 3, Tailwind 4, Pest |
+| Dev-time AI tooling | Laravel Boost + Filament Blueprint (user holds a license) installed as dev dependencies; Blueprint's planning skill is used when specifying Filament resources |
+| Tenancy | By Brand in `/app`; none in `/admin` |
+| UI | Two Filament panels with one custom theme approximating the Modernist design system (Archivo, zero radius, 2px rules, red accent `#ec3013`, ground `#f3f2f2`, ink `#201e1d`) |
+| Generator form | Schema-driven: rendered from the Krea node app's `input_openapi_schema`, with per-field Art Director overrides |
+| Campaign shape | Login → campaign list → Generator directly. No "addons" dashboard. A campaign holds several switchable generator pipelines and at most one editor pipeline |
+| Image storage | Every Krea result is downloaded into our filesystem disk (local in dev, S3-compatible in prod). Krea URL kept as reference |
+| Job completion | Queue worker polls Krea `GET /jobs/{id}`. Webhooks not used (unsigned) |
+| Krea credentials | Per-brand encrypted key with studio-wide fallback in `.env`. Never exposed to the browser |
+| Database | MySQL |
+| Queue | `database` driver in dev, Redis in production |
+
+## 4. Architecture
+
+```
+Browser (Editor)  ── Livewire ──▶  /app panel (Filament, tenant = Brand)
+Browser (AD)      ── Livewire ──▶  /admin panel (Filament)
+                                        │
+                                        ▼
+                                Domain services
+                     ┌──────────────────┼───────────────────┐
+                     ▼                  ▼                   ▼
+              PipelineSchemaSync   GenerationRunner    PieceDownloader
+                     │                  │                   │
+                     └────────► KreaClient (HTTP) ◄─────────┘
+                                        │
+                                  api.krea.ai
+```
+
+### 4.1 KreaClient
+
+Thin wrapper over Laravel's HTTP client, constructed with a bearer key. Methods:
+
+- `getNodeApp(string $versionId): array` → `GET /node-apps/{id}`; returns name and `input_openapi_schema`.
+- `execute(string $versionId, array $inputs): array` → `POST /node-apps/{id}/execute`; body is the inputs keyed by schema property name; image inputs are sent as `data:image/...;base64,` strings; returns the first job object (the API returns an array).
+- `getJob(string $jobId): array` → `GET /jobs/{id}`.
+- `download(string $url): string` → raw bytes of a result file.
+
+Errors raise `KreaException` carrying the HTTP status and Krea's `message|error|detail`. A `KreaClientFactory` resolves the key: brand key if set, else `config('services.krea.key')`. An interface `KreaClientContract` allows a `FakeKreaClient` in tests.
+
+### 4.2 PipelineSchemaSync
+
+Given a Pipeline, fetches the node app, stores `input_schema` and `schema_fetched_at`, and upserts `PipelineField` rows from `schema.properties`:
+
+- `name` = property key, `type` derived from the schema (`image` when `format` is `uri`/`binary` or the property name/description mentions image, else `string`, `number`, `boolean`, `unknown`), `required` from `schema.required`.
+- Existing rows keep their overrides. Properties no longer in the schema are marked `stale = true` and excluded from rendering.
+- On first sync, heuristics set defaults: the first required string property becomes role `prompt`; image properties get role `image`.
+
+### 4.3 Form rendering
+
+`PipelineFormBuilder` turns a Pipeline's non-stale, visible fields into Filament schema components:
+
+| Field type / role | Component |
+| --- | --- |
+| role `prompt` | Textarea, 4 rows, rendered as step 1 with the "Qué quieres ver" header |
+| `image` | FileUpload, images only, single file, preview, private disk `inputs` |
+| `string` | Textarea 2 rows |
+| `number` | TextInput numeric |
+| `boolean` | Toggle |
+| `unknown` | TextInput with help text "campo sin tipo conocido" |
+
+Hidden fields are not rendered; on submit their `fixed_value` is merged into the inputs. Required visible fields get `required()`. Labels use `label_override ?? name` humanised.
+
+### 4.4 GenerationRunner (queued job chain)
+
+1. Editor submits → `Generation` created with `status = pending`, inputs JSON (uploaded images stored on disk `inputs`, JSON holds their paths), `kind = series` or `edit`.
+2. `RunGenerationJob`: reads images from disk into data URLs, merges fixed values, calls `execute`, stores `krea_job_id`, `status = submitted`. On `KreaException` → `status = failed`, `error_message` from the status map in §7.
+3. `PollGenerationJob`: calls `getJob`. Non-terminal → stores Krea status text and re-dispatches itself with delay 4 s (8 s after 2 minutes, 15 s after 5 minutes); marks `status = processing`. Terminal `completed` → `status = downloading`, dispatches `DownloadPiecesJob`. Terminal `failed` / `cancelled` → `status = failed`. Older than 10 minutes → `status = failed`, `error_message = "Tiempo de espera agotado."`, `retryable = true`.
+4. `DownloadPiecesJob`: for each URL in `result.urls` (array or object values, deduplicated), downloads bytes, stores under `pieces/{brand}/{campaign}/{generation}/{index}.{ext}`, reads dimensions, creates `Piece`. Three tries per file. Then `status = completed`. Krea URL is kept on the Piece regardless.
+
+Edits reuse the same chain with `kind = edit`, the campaign's editor pipeline, `parent_piece_id` set, and the parent piece's bytes supplied to the pipeline's field with role `image`, the instruction to the field with role `prompt`. Resulting pieces get `version_of_piece_id` = the parent's root.
+
+### 4.5 Storage
+
+Disks: `inputs` (private) and `pieces` (private). Local driver in dev, S3-compatible in production, configured only through `.env`. Images are served with `Storage::temporaryUrl()` where the driver supports it; the local driver falls back to a signed route that streams the file after checking the user may access the brand.
+
+## 5. Data model
+
+All tables have `id`, `created_at`, `updated_at`; soft deletes where noted.
+
+- **brands** — `name`, `slug` (unique), `logo_path` nullable, `krea_api_key` encrypted nullable, `monthly_image_cap` int default 300 (stored, not enforced in this slice).
+- **users** — Laravel defaults + `role` enum(`art_director`,`editor`).
+- **brand_user** — `brand_id`, `user_id`, unique pair.
+- **campaigns** — `brand_id`, `name`, `slug`, `description` nullable, `status` enum(`draft`,`in_production`,`in_review`,`archived`), `cover_path` nullable, `starts_on` / `ends_on` nullable dates, `default_pipeline_id` nullable, soft deletes.
+- **pipelines** — `campaign_id`, `kind` enum(`generator`,`editor`), `label`, `krea_version_id`, `input_schema` json nullable, `schema_fetched_at` nullable, `sort_order` int, `is_active` bool. Constraint: at most one active `editor` per campaign (enforced in validation).
+- **pipeline_fields** — `pipeline_id`, `name`, `type` enum(`string`,`image`,`number`,`boolean`,`unknown`), `required` bool, `label_override` nullable, `help_text` nullable, `visibility` enum(`visible`,`hidden`), `fixed_value` text nullable, `role` enum(`prompt`,`image`,`none`), `stale` bool default false, `sort_order`. Unique (`pipeline_id`,`name`).
+- **generations** — `campaign_id`, `pipeline_id`, `user_id`, `kind` enum(`series`,`edit`), `parent_piece_id` nullable, `inputs` json, `krea_job_id` nullable, `status` enum(`pending`,`submitted`,`processing`,`downloading`,`completed`,`failed`), `krea_status` string nullable, `queue_position` int nullable, `error_message` nullable, `retryable` bool default false, `seen_at` nullable, `submitted_at` / `completed_at` nullable.
+- **pieces** — `generation_id`, `campaign_id`, `storage_path`, `krea_url`, `width` / `height` nullable, `bytes` nullable, `index` int, `version_of_piece_id` nullable, `selected` bool default false.
+
+Derived: a *series* is a `generations` row of kind `series` with its pieces. A piece's *version chain* is all pieces whose `version_of_piece_id` equals the root piece's id (the root itself has null), ordered by `created_at`.
+
+## 6. Screens
+
+### 6.1 `/app` (Editor)
+
+1. **Login.** Filament login, themed. Right half carries the red poster statement from the prototype.
+2. **Campañas.** Card grid for the current brand: cover, status tag, name, description, `N series · M piezas`, "Abrir →". Clicking opens the Generator for that campaign. No "new campaign" here; campaigns are created by Art Directors.
+3. **Generador** (`/app/{brand}/campaigns/{campaign}`), the campaign landing.
+   - Breadcrumb `Campañas / {campaign}`. Header: pipeline label, campaign name, helper copy, and a "Esta serie" counter block showing pieces and series counts.
+   - If more than one active generator: a tab row to switch pipeline; the form re-renders. The campaign's `default_pipeline_id` is preselected, else the first by `sort_order`.
+   - Left column: the schema-driven form (§4.3), a footer line with the library summary, and the primary button "Generar serie →". Submit dispatches the chain and clears nothing, so the Editor can queue another series.
+   - Right column "Imágenes generadas": empty state; running generations as placeholder tiles with the Krea status text; "Última serie" (latest completed series, up to 4 thumbs); error block for the latest failed generation; "Series anteriores" (up to 25 thumbs) with "Ver galería".
+   - Livewire `wire:poll.3s` is active only while any generation for this campaign is non-terminal.
+4. **Galería** (`/app/{brand}/campaigns/{campaign}/gallery`). Filter chips `Todas · Series · Ediciones`; grid of pieces with badge (`S01`, `v02`) and caption; side card with "Ficha del proyecto" (pipeline label, latest prompt), "Series" rows, and actions "Generar más" and "Descargar selección" (zips selected pieces via a queued export and a download link). Empty state links back to the Generator.
+5. **Visor** (modal over Generator or Gallery). Left: the piece, version thumbnails, `vNN` label. Right: kicker + "Editar la pieza", the originating prompt, "Qué cambias" textarea with quick chips (Cambiar fondo, Quitar objeto, Ajustar luz, Ampliar encuadre) that append text, "Aplicar edición →" and cost line, progress block while the edit runs, error block, "Versiones de esta pieza" list, "Marcar seleccionada" toggle, "Descargar". If the campaign has no active editor pipeline, the edit block is replaced by "Esta campaña no tiene editor configurado."
+6. **Cola de trabajos.** Bell in the top bar with unseen count (generations by this user in this brand that are terminal and `seen_at` null). Drawer lists generations newest first with kind, status, label (prompt excerpt), detail, and thumbnails for completed ones; opening the drawer sets `seen_at`.
+7. **Ajustes.** Profile (name, email), password change, "Cerrar sesión". The usage meter and team list from the prototype are shown as static placeholders labelled "próximamente".
+
+### 6.2 `/admin` (Art Director)
+
+Filament resources, default Filament layouts under the shared theme:
+
+- **Brands** — CRUD; `krea_api_key` as a password field that is write-only; header action "Probar conexión" calls `GET /node-apps?limit=1` with the resolved key and reports success or the Krea error.
+- **Users** — CRUD; role select; brands multi-select shown for editors.
+- **Campaigns** — CRUD filtered by brand; relation manager **Pipelines**; read-only relation manager **Generations** (status, user, pipeline, error, timestamps) for support.
+- **Pipelines** (via relation manager and a standalone resource) — create form: kind, label, `krea_version_id`, sort order, active. On save, `PipelineSchemaSync` runs; failure blocks saving and shows the Krea error. Edit page shows a **Fields** table editor: name, type, required (read-only) and label override, help text, visibility, fixed value, role (editable). Header action "Refrescar esquema" re-syncs and flags stale fields. Validation: one active editor per campaign; exactly one field with role `prompt` for editor pipelines and at least one with role `image`.
+
+## 7. Error handling
+
+Krea HTTP status → Spanish message (from the prototype): 400 "Solicitud inválida.", 401 "Clave de acceso inválida o faltante.", 402 "Saldo insuficiente.", 404 "No se encontró el flujo.", 500 "Error interno del servicio.", other "Error {status}.". Krea's own detail is appended when present. Network failures → "No se pudo conectar con el servicio. Intenta de nuevo en unos segundos."
+
+- Krea `failed`/`cancelled` → Generation `failed` with `El proceso terminó con estado "{status}".`
+- Poll timeout (10 min) → `failed`, `retryable`, message "Tiempo de espera agotado."
+- Download failures: 3 attempts per file; if any file still fails the Generation is `failed` but pieces already stored remain, and Krea URLs are kept.
+- Pipeline schema fetch failure blocks the pipeline save and shows the message inline.
+- If a pipeline's fields include a stale, required field (schema drift), the Generator shows a warning banner and disables submit until an Art Director refreshes the schema.
+- All Krea calls log request id, brand, pipeline, and status at `info`; failures at `warning` with the response body truncated to 2 KB.
+
+## 8. Security
+
+- Krea keys are encrypted at rest (`encrypted` cast) and never rendered after save.
+- Editors are scoped by tenancy; every `/app` query goes through the tenant relationship. Feature tests assert cross-brand access fails.
+- Uploaded inputs are validated as images ≤ 20 MB and stored privately.
+- Signed URLs for piece downloads expire after 10 minutes.
+- The prototype's hard-coded Krea key must be rotated by the user; the new key is entered only in `/admin` or `.env`.
+
+## 9. Testing
+
+- **Unit:** `PipelineSchemaSync` (new/changed/removed properties, default roles, override preservation), `PipelineFormBuilder` (each type, hidden merge, required), Krea status → message map, version-chain query.
+- **Feature (Pest + `FakeKreaClient`):** full chain series generation creates pieces on the fake disk; edit generation sets `version_of_piece_id`; poll backoff and timeout; download retry; Editor cannot open another brand's campaign or `/admin`; Art Director CRUD for every resource; pipeline save fails on schema error; one-editor-per-campaign validation.
+- **Livewire:** Generator submit with a missing required field shows validation; Generator submit with valid data dispatches the chain; Viewer edit without editor pipeline is disabled.
+
+## 10. Out of scope for slice 1 (later sub-projects)
+
+2. Media library / product picker (brand-curated products, models, poses, backgrounds; optional upload to Krea `/assets`).
+3. Usage quota enforcement and meter (300 images/month per brand).
+4. Team management by Art Directors inside `/app`, in-app notifications beyond the bell, email digests, review links and "Enviar a revisión del estudio".
+5. Corporate SSO.
+6. Krea webhooks as a polling accelerator.
+
+## 11. Local environment notes
+
+- Machine has PHP 8.2.8 and Composer 2.1.5. Filament 5 needs PHP 8.2+ and Laravel 11.28+; Composer should be updated to 2.8+ before installing.
+- MySQL is installed locally. Laravel Herd is not installed; `php artisan serve` plus `php artisan queue:work` is the dev loop.
+- Filament's package repository needs `composer config --auth http-basic.packages.filamentphp.com <email> <license-key>` before `composer require filament/blueprint --dev`.
+- The Laravel app lives in `app/` inside this repository; `prototypes/` and `docs/` stay at the root.
