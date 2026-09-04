@@ -27,7 +27,7 @@ Product name in the UI: **Media Ops** (brand logo + "Media Ops" wordmark as in t
 | UI | Two Filament panels with one custom theme approximating the Modernist design system (Archivo, zero radius, 2px rules, red accent `#ec3013`, ground `#f3f2f2`, ink `#201e1d`) |
 | Generator form | Schema-driven: rendered from the Krea node app's `input_openapi_schema`, with per-field Art Director overrides |
 | Campaign shape | Login → campaign list → Generator directly. No "addons" dashboard. A campaign holds several switchable generator pipelines, at most one editor pipeline (variations), and at most one upscaler pipeline (4K delivery renditions) |
-| Image storage | Every Krea result is downloaded into our filesystem disk (local in dev, S3-compatible in prod). Krea URL kept as reference |
+| Image storage | All image handling goes through S3-compatible object storage in every environment (AWS S3, Cloudflare R2, or MinIO for local dev). Every Krea result is downloaded into a private bucket. Krea URL kept as reference |
 | Job completion | Queue worker polls Krea `GET /jobs/{id}`. Webhooks not used (unsigned) |
 | Krea credentials | Per-brand encrypted key with studio-wide fallback in `.env`. Never exposed to the browser |
 | Database | MySQL |
@@ -97,7 +97,7 @@ Upscales reuse the chain with `kind = upscale`, the campaign's upscaler pipeline
 
 ### 4.5 Storage
 
-Disks: `inputs` (private) and `pieces` (private). Local driver in dev, S3-compatible in production, configured only through `.env`. Images are served with `Storage::temporaryUrl()` where the driver supports it; the local driver falls back to a signed route that streams the file after checking the user may access the brand.
+All images (Editor uploads, downloaded pieces, campaign covers, brand logos) live in S3-compatible object storage in every environment; no local-disk image handling. Laravel `s3` driver with two private disks, `inputs` and `pieces`, pointing at prefixes of one bucket (or two buckets), configured only through `.env`. Local development runs MinIO in Docker (`docker compose up minio`) or points at a dev bucket. Images are served to the browser with `Storage::temporaryUrl()` (presigned, 10 minutes); Filament `FileUpload` writes straight to the `inputs` disk. Uploaded inputs are read back from object storage into base64 data URLs when sent to Krea, as in the prototype; switching to presigned URLs as Krea inputs is a later optimisation once confirmed against the schema.
 
 ## 5. Data model
 
@@ -155,14 +155,14 @@ Krea HTTP status → Spanish message (from the prototype): 400 "Solicitud invál
 
 - Krea keys are encrypted at rest (`encrypted` cast) and never rendered after save.
 - Editors are scoped by tenancy; every `/app` query goes through the tenant relationship. Feature tests assert cross-brand access fails.
-- Uploaded inputs are validated as images ≤ 20 MB and stored privately.
+- Uploaded inputs are validated as images ≤ 20 MB and stored in a private bucket; nothing image-related is ever written to the web server's disk.
 - Signed URLs for piece downloads expire after 10 minutes.
 - The prototype's hard-coded Krea key must be rotated by the user; the new key is entered only in `/admin` or `.env`.
 
 ## 9. Testing
 
 - **Unit:** `PipelineSchemaSync` (new/changed/removed properties, default roles, override preservation), `PipelineFormBuilder` (each type, hidden merge, required), Krea status → message map, version-chain query including upscales.
-- **Feature (Pest + `FakeKreaClient`):** full chain series generation creates pieces on the fake disk; edit generation sets `parent_piece_id`/`root_piece_id` and kind `edit`; upscale generation creates a kind `upscale` child that appears in the version chain with a 4K badge; poll backoff and timeout; download retry; Editor cannot open another brand's campaign or `/admin`; Art Director CRUD for every resource; pipeline save fails on schema error; one-editor-per-campaign validation.
+- **Feature (Pest + `FakeKreaClient`):** full chain series generation creates pieces on `Storage::fake('pieces')`; edit generation sets `parent_piece_id`/`root_piece_id` and kind `edit`; upscale generation creates a kind `upscale` child that appears in the version chain with a 4K badge; poll backoff and timeout; download retry; Editor cannot open another brand's campaign or `/admin`; Art Director CRUD for every resource; pipeline save fails on schema error; one-editor-per-campaign validation.
 - **Livewire:** Generator submit with a missing required field shows validation; Generator submit with valid data dispatches the chain; Viewer edit without editor pipeline is disabled; Viewer "Entregar en 4K" without upscaler is disabled.
 
 ## 10. Out of scope for slice 1 (later sub-projects)
@@ -176,6 +176,6 @@ Krea HTTP status → Spanish message (from the prototype): 400 "Solicitud invál
 ## 11. Local environment notes
 
 - Machine has PHP 8.2.8 and Composer 2.1.5. Filament 5 needs PHP 8.2+ and Laravel 11.28+; Composer should be updated to 2.8+ before installing.
-- MySQL is installed locally. Laravel Herd is not installed; `php artisan serve` plus `php artisan queue:work` is the dev loop.
+- MySQL is installed locally. Laravel Herd is not installed; `php artisan serve` plus `php artisan queue:work` is the dev loop, with MinIO from `docker-compose.yml` (or a dev bucket) as the object store. Docker Desktop availability should be checked at setup.
 - Filament's package repository needs `composer config --auth http-basic.packages.filamentphp.com <email> <license-key>` before `composer require filament/blueprint --dev`.
 - The Laravel app lives in `app/` inside this repository; `prototypes/` and `docs/` stay at the root.
