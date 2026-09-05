@@ -185,3 +185,25 @@ Make activation atomic, for example by serializing it under a transaction lock o
 4. Add the acceptance scenarios above to §9, then write the implementation plan in dependency order.
 
 This review does not require changing the chosen Laravel/Filament architecture. It requires enough detail that an implementer does not have to invent the behavior that protects tenant data, paid executions, and generated assets.
+
+## Disposition after convergence — 2026-09-05
+
+Decisions taken with the user on 2026-09-05: Krea only with a small `ImageEngine` seam and provider-neutral column names; essential recovery set in slice 1 with ZIP export, 24-hour reconciler, revision counters, and host allowlist moved to slice 2; Modernist theme named as slice 2; convergence pass done by the planning session. The design now reflects these. "Resolved" below means specified in the design, not implemented or runtime-verified.
+
+| Finding | Disposition |
+| --- | --- |
+| R1 framework baseline | Resolved: Livewire 4, Tailwind 4.1+ |
+| R2 upload path authorization | Resolved: `input_uploads` ownership records, ID-based commands, relationship checks, signing after authorization |
+| R3 durable execution | Resolved for slice 1: `submitting` claim, all job IDs kept, output manifest, `submission_unknown`, no automatic resubmission, manual "Comprobar estado". Deferred to slice 2: per-minute reconciler and 24-hour background recovery |
+| R4 execution snapshot | Resolved: `execution_snapshot` with pinned credential source |
+| R5 schema reconciliation | Resolved: readiness from current schema; removed required fields no longer block |
+| R6 schema subset and semantic types | Resolved: declared primitive subset, editable `input_type`, typed fixed values with `has_fixed_value` |
+| R7 bindings and readiness | Resolved: one image + one prompt binding for editors, one image for upscalers, save-inactive then activate |
+| R8 uploads and signed delivery | Resolved in design: S3 temporary disk, 20 MiB rule, URL refresh at click and before expiry. Runtime verification is Gate B |
+| R9 root-piece rule | Resolved: `root_piece_id = parent.root_piece_id ?? parent.id`, ordering by `created_at`, `id` |
+| R10 ZIP export | Deferred to slice 2 by decision; slice 1 offers per-piece download. Shared-curation semantics resolved |
+| R11 4K contract | Resolved: 3,840 px longest edge, validated dimensions, `is_4k` flag |
+| R12 bell refresh | Resolved: panel-level 5 s polling component; revision counters deferred to slice 2 |
+| R13 atomic activation | Resolved: transaction lock on campaign, default-pipeline validation |
+| Engine research | Krea first, Comfy deferred to slice 5. Five-operation adapter not adopted; four-method `ImageEngine` with provider-neutral columns instead |
+| Prototype visual fidelity | Deferred to slice 2 as a named slice |
