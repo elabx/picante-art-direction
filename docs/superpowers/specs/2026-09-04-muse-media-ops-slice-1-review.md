@@ -194,7 +194,7 @@ Decisions taken with the user on 2026-09-05: Krea only with a small `ImageEngine
 | --- | --- |
 | R1 framework baseline | Resolved: Livewire 4, Tailwind 4.1+ |
 | R2 upload path authorization | Resolved: `input_uploads` ownership records, ID-based commands, relationship checks, signing after authorization |
-| R3 durable execution | Resolved for slice 1: `submitting` claim, all job IDs kept, output manifest, `submission_unknown`, no automatic resubmission, manual "Comprobar estado". Deferred to slice 2: per-minute reconciler and 24-hour background recovery |
+| R3 durable execution | Resolved for slice 1: `submitting` claim, all job IDs kept, output manifest keyed per provider job, `submission_unknown`, no automatic resubmission, manual "Comprobar estado" and "Reintentar descarga", and (added 2026-09-05 after the Codex plan review) a minimal per-minute `media:reconcile` for stale claims and lost dispatches. Deferred to slice 2: 24-hour background recovery |
 | R4 execution snapshot | Resolved: `execution_snapshot` with pinned credential source |
 | R5 schema reconciliation | Resolved: readiness from current schema; removed required fields no longer block |
 | R6 schema subset and semantic types | Resolved: declared primitive subset, editable `input_type`, typed fixed values with `has_fixed_value` |
@@ -207,3 +207,5 @@ Decisions taken with the user on 2026-09-05: Krea only with a small `ImageEngine
 | R13 atomic activation | Resolved: transaction lock on campaign, default-pipeline validation |
 | Engine research | Krea first, Comfy deferred to slice 5. Five-operation adapter not adopted; four-method `ImageEngine` with provider-neutral columns instead |
 | Prototype visual fidelity | Deferred to slice 2 as a named slice |
+
+A second review pass on the implementation plan (Codex, 2026-09-05) is recorded in `../plans/2026-09-05-codex-plan-review.md`; the plan's Revision log maps each of its findings to a change.
