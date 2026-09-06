@@ -8,7 +8,7 @@ Use superpowers. We are building **Muse Media Ops**, a Laravel 12 + Filament 5 a
 
 Read, in this order, before doing anything:
 1. `docs/superpowers/specs/2026-09-04-muse-media-ops-slice-1-design.md` (the approved spec)
-2. `docs/superpowers/plans/2026-09-05-muse-media-ops-slice-1.md` (the implementation plan, 25 tasks)
+2. `docs/superpowers/plans/2026-09-05-muse-media-ops-slice-1.md` (the implementation plan: Tasks 0–25 plus 6b, 7b, 16b)
 3. `docs/superpowers/specs/2026-09-04-muse-media-ops-slice-1-review.md` (review findings and their disposition)
 4. `docs/superpowers/plans/2026-09-05-codex-plan-review.md` (already applied; see the plan's Revision log, no pending fixes)
 
