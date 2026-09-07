@@ -114,7 +114,11 @@ it('authorizes only temporary or owned image paths', function (): void {
         ->and($image->getAcceptedFileTypes())->toBe(config('media.allowed_mimes'))
         ->and($image->isFilePathAuthorized('tmp/upload.png'))->toBeTrue()
         ->and($image->isFilePathAuthorized($ownedUpload->storage_path))->toBeTrue()
-        ->and($image->isFilePathAuthorized($otherUpload->storage_path))->toBeFalse();
+        ->and($image->isFilePathAuthorized($otherUpload->storage_path))->toBeFalse()
+        ->and($image->isFilePathAuthorized('tmp/../uploads/other.png'))->toBeFalse()
+        ->and($image->isFilePathAuthorized('tmp/./upload.png'))->toBeFalse()
+        ->and($image->isFilePathAuthorized('tmp/\\upload.png'))->toBeFalse()
+        ->and($image->isFilePathAuthorized("tmp/\0upload.png"))->toBeFalse();
 });
 
 it('enforces source constraints for non-enum scalar inputs', function (): void {

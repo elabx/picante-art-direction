@@ -102,7 +102,7 @@ final class PipelineFormBuilder
                 ->visibility('private')
                 ->maxSize(config('media.max_upload_kb'))
                 ->preventFilePathTampering(
-                    allowFilePathUsing: fn (string $file): bool => str_starts_with($file, 'tmp/')
+                    allowFilePathUsing: fn (string $file): bool => $this->isCanonicalTemporaryPath($file)
                         || InputUpload::query()
                             ->where('storage_path', $file)
                             ->where('user_id', auth()->id())
@@ -133,6 +133,28 @@ final class PipelineFormBuilder
             ->orderBy('sort_order')
             ->orderBy('id')
             ->get();
+    }
+
+    private function isCanonicalTemporaryPath(string $file): bool
+    {
+        if (! str_starts_with($file, 'tmp/')
+            || str_contains($file, '\\')
+            || preg_match('/\\p{C}/u', $file) !== 0) {
+            return false;
+        }
+
+        $segments = explode('/', $file);
+        if (count($segments) < 2) {
+            return false;
+        }
+
+        foreach (array_slice($segments, 1) as $segment) {
+            if ($segment === '' || in_array($segment, ['.', '..'], true)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     /**
