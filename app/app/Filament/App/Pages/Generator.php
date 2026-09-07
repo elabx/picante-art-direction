@@ -18,6 +18,7 @@ use App\Services\Generation\CreateGeneration;
 use App\Services\Generation\RestartGeneration;
 use App\Services\Media\InputUploadService;
 use App\Services\Pipelines\PipelineFormBuilder;
+use App\Support\RestartGenerationAction;
 use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Forms\Components\Hidden;
@@ -219,16 +220,7 @@ class Generator extends Page
 
     public function restartAction(): Action
     {
-        return Action::make('restart')->label('Generar de nuevo')->requiresConfirmation()
-            ->modalHeading('¿Iniciar una nueva generación?')
-            ->modalDescription(function (array $arguments): string {
-                $generation = $this->generation((int) ($arguments['generationId'] ?? 0));
-
-                return ($generation->failure_reason === FailureReason::ProviderFailed
-                    ? 'El trabajo anterior terminó sin completarse.' : 'El trabajo anterior podría seguir en curso.')
-                    .' Iniciar una nueva generación puede generar un cargo adicional. Intentaremos recuperar el resultado anterior cuando sea posible.';
-            })
-            ->modalSubmitActionLabel('Sí, generar de nuevo')->modalCancelActionLabel('Cancelar')
+        return RestartGenerationAction::make(fn (array $arguments): Generation => $this->generation((int) ($arguments['generationId'] ?? 0)))
             ->action(function (array $arguments): void {
                 try {
                     app(RestartGeneration::class)->confirmRestart(

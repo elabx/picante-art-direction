@@ -11,6 +11,7 @@ use Filament\Http\Middleware\DispatchServingFilamentEvent;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
+use Filament\View\PanelsRenderHook;
 use Filament\Widgets\AccountWidget;
 use Filament\Widgets\FilamentInfoWidget;
 use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
@@ -18,6 +19,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\HtmlString;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
@@ -39,6 +41,8 @@ class AppPanelProvider extends PanelProvider
             ->tenant(Brand::class, slugAttribute: 'slug')
             ->tenantMenu(fn (): bool => auth()->user()->brands()->count() > 1)
             ->spa()
+            ->renderHook(PanelsRenderHook::BODY_END, fn (): string => Filament::getTenant() instanceof Brand ? Blade::render('@livewire(\'piece-viewer\')') : '')
+            ->renderHook(PanelsRenderHook::TOPBAR_END, fn (): string => Filament::getTenant() instanceof Brand ? Blade::render('@livewire(\'jobs-bell\')') : '')
             ->colors([
                 'primary' => Color::Red,
             ])
