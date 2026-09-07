@@ -7,6 +7,16 @@
 <a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
+## Infrastructure
+
+Muse Media Ops targets Laravel Cloud with `app/` as the application root, managed MySQL, Redis queues, private AWS S3, and CloudFront signed media URLs. Start with [the production environment reference](.env.production.example) and the [dated infrastructure checklist](../docs/superpowers/plans/2026-09-07-infra-checklist.md). All real values belong in environment settings or secrets.
+
+Run the Redis worker on a dedicated Worker cluster with `php artisan queue:work redis --timeout=150 --tries=1`; the application keeps `retry_after=420` and job budgets of 90/60/120 seconds. Use `CLOUDFRONT_PRIVATE_KEY_BASE64` for a Cloud-injected signing secret, or `CLOUDFRONT_PRIVATE_KEY_PATH` where every replica has a provisioned PEM. The base64 value takes precedence and invalid keys fail closed.
+
+Local commands run from the repository root through DDEV (`ddev pest`, `ddev pint`, `ddev npm run build`). Local UI fixtures require `APP_ENV=local` and `FAKE_ENGINE=true`, then a worker restart. That toggle does not enable fixtures in Cloud staging or production; preview generation stays unavailable until a scoped fixture runtime is configured.
+
+The real local MinIO 15 MiB upload/preview/download server flow passed. Browser rendering and expiry checks, AWS/Cloud staging, memory sizing, worker shutdown, scheduler/retention and CI deployment gating remain pending; see the checklist for exact evidence and owner checks. No remote deployment or real Krea execution was performed.
+
 ## About Laravel
 
 Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:

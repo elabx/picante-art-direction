@@ -12,6 +12,7 @@ return [
         'domain' => env('CLOUDFRONT_DOMAIN'),
         'key_pair_id' => env('CLOUDFRONT_KEY_PAIR_ID'),
         'private_key_path' => env('CLOUDFRONT_PRIVATE_KEY_PATH'),
+        'private_key_base64' => env('CLOUDFRONT_PRIVATE_KEY_BASE64'),
     ],
     'krea' => [
         'base_url' => env('KREA_BASE_URL', 'https://api.krea.ai'),

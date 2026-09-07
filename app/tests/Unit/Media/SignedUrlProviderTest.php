@@ -98,3 +98,44 @@ function writeCloudFrontPrivateKey(): string
 
     return $path;
 }
+
+it('signs with an environment supplied base64 PEM in preference to a file path', function (?string $path): void {
+    $key = openssl_pkey_new(['private_key_bits' => 2048]);
+    openssl_pkey_export($key, $pem);
+    $this->travelTo(Carbon::parse('2026-09-07 12:00:00'));
+    config(['media.cloudfront' => [
+        'domain' => 'd111.cloudfront.net',
+        'key_pair_id' => 'KPID',
+        'private_key_base64' => base64_encode($pem),
+        'private_key_path' => $path,
+    ]]);
+
+    $url = (new CloudFrontSignedUrlProvider)->url('pieces', '1.png', now()->addMinutes(10));
+    parse_str((string) parse_url($url, PHP_URL_QUERY), $query);
+    $policy = '{"Statement":[{"Resource":"https://d111.cloudfront.net/pieces/1.png","Condition":{"DateLessThan":{"AWS:EpochTime":1788783000}}}]}';
+
+    expect(openssl_verify($policy, base64_decode(strtr($query['Signature'], '-_~', '+=/')), openssl_pkey_get_details($key)['key'], OPENSSL_ALGO_SHA1))->toBe(1);
+    expect($query['Key-Pair-Id'])->toBe('KPID');
+})->with([null, '/missing/key.pem']);
+
+it('rejects invalid cloudfront keys without disclosing secrets or retaining an unsafe exception', function (string $source, string $value): void {
+    config(['media.cloudfront' => [
+        'domain' => 'd111.cloudfront.net',
+        'key_pair_id' => 'KPID',
+        'private_key_path' => null,
+        $source => $value,
+    ]]);
+
+    try {
+        (new CloudFrontSignedUrlProvider)->url('pieces', '1.png', now()->addMinutes(10));
+        $this->fail('Invalid signing configuration must fail closed.');
+    } catch (InvalidArgumentException $exception) {
+        expect($exception->getMessage())->toBe('CloudFront signing key is invalid.');
+        expect($exception->getPrevious())->toBeNull();
+        expect((string) $exception)->not->toContain($value)->not->toContain('dummy-secret-marker');
+    }
+})->with([
+    'malformed base64' => ['private_key_base64', 'dummy-secret-marker!'],
+    'malformed PEM' => ['private_key_base64', base64_encode("-----BEGIN PRIVATE KEY-----\ndummy-secret-marker\n-----END PRIVATE KEY-----")],
+    'missing key file' => ['private_key_path', '/missing/dummy-secret-marker.pem'],
+]);

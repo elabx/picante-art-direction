@@ -6,6 +6,7 @@ use App\Support\Media;
 use Aws\CloudFront\UrlSigner;
 use DateTimeInterface;
 use InvalidArgumentException;
+use Throwable;
 
 final class CloudFrontSignedUrlProvider implements SignedUrlProvider
 {
@@ -26,11 +27,24 @@ final class CloudFrontSignedUrlProvider implements SignedUrlProvider
             ], '', '&', PHP_QUERY_RFC3986);
         }
 
-        return (new UrlSigner($configuration['key_pair_id'], $configuration['private_key_path']))
-            ->getSignedUrl($url, $expiresAt->getTimestamp());
+        try {
+            $privateKey = $configuration['private_key_base64'] !== ''
+                ? base64_decode($configuration['private_key_base64'], strict: true)
+                : $configuration['private_key_path'];
+
+            if (! is_string($privateKey) || $privateKey === '') {
+                throw new InvalidArgumentException;
+            }
+
+            return (new UrlSigner($configuration['key_pair_id'], $privateKey))
+                ->getSignedUrl($url, $expiresAt->getTimestamp());
+        } catch (Throwable) {
+            // The SDK can include the private key in its exception message.
+            throw new InvalidArgumentException('CloudFront signing key is invalid.');
+        }
     }
 
-    /** @return array{domain: string, key_pair_id: string, private_key_path: string} */
+    /** @return array{domain: string, key_pair_id: string, private_key_path: string, private_key_base64: string} */
     private function configuration(): array
     {
         $configuration = config('media.cloudfront');
@@ -39,16 +53,15 @@ final class CloudFrontSignedUrlProvider implements SignedUrlProvider
             || ! is_string($configuration['domain'] ?? null)
             || $configuration['domain'] === ''
             || ! is_string($configuration['key_pair_id'] ?? null)
-            || $configuration['key_pair_id'] === ''
-            || ! is_string($configuration['private_key_path'] ?? null)
-            || $configuration['private_key_path'] === '') {
+            || $configuration['key_pair_id'] === '') {
             throw new InvalidArgumentException('CloudFront signed URL configuration is incomplete.');
         }
 
         return [
             'domain' => $configuration['domain'],
             'key_pair_id' => $configuration['key_pair_id'],
-            'private_key_path' => $configuration['private_key_path'],
+            'private_key_path' => is_string($configuration['private_key_path'] ?? null) ? $configuration['private_key_path'] : '',
+            'private_key_base64' => is_string($configuration['private_key_base64'] ?? null) ? $configuration['private_key_base64'] : '',
         ];
     }
 
