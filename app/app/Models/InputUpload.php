@@ -16,6 +16,7 @@ class InputUpload extends Model
     {
         return [
             'finalized_at' => 'datetime',
+            'cleanup_marked_at' => 'datetime',
         ];
     }
 

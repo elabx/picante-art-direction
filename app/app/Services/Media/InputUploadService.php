@@ -7,6 +7,7 @@ use App\Models\InputUpload;
 use App\Models\Pipeline;
 use App\Models\User;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -123,6 +124,26 @@ final class InputUploadService
     public function bytes(InputUpload $upload): string
     {
         return Storage::disk('inputs')->get($upload->storage_path);
+    }
+
+    /** @param list<int> $uploadIds */
+    public function retainForReference(array $uploadIds): void
+    {
+        if (DB::transactionLevel() === 0) {
+            throw new \LogicException('Upload references must be retained inside their linking transaction.');
+        }
+
+        $ids = array_values(array_unique($uploadIds));
+        $uploads = InputUpload::query()->whereKey($ids)->orderBy('id')->lockForUpdate()->get();
+        if ($uploads->count() !== count($ids)) {
+            throw new AuthorizationException;
+        }
+
+        foreach ($uploads as $upload) {
+            if ($upload->cleanup_marked_at !== null) {
+                $upload->forceFill(['cleanup_marked_at' => null])->save();
+            }
+        }
     }
 
     public function dataUrl(InputUpload $upload): string

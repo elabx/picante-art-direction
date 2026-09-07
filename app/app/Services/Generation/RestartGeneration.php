@@ -82,6 +82,7 @@ final class RestartGeneration
                 }
                 $uploadIds = $this->authorizeUploads($user, $fresh, $campaign, $pipeline);
                 $this->ensureNewExecution($fresh, $campaign, $pipeline);
+                $this->uploads->retainForReference($uploadIds);
 
                 return $this->state->replacement($fresh, $user->id, $restartRequestId, $uploadIds);
             });

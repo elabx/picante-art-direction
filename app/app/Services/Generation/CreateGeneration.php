@@ -13,6 +13,7 @@ use App\Models\Piece;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
 use App\Models\User;
+use App\Services\Media\InputUploadService;
 use App\Services\Pipelines\PipelineFormBuilder;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Database\QueryException;
@@ -25,6 +26,7 @@ final class CreateGeneration
     public function __construct(
         private readonly InputComposer $composer,
         private readonly PipelineFormBuilder $formBuilder,
+        private readonly InputUploadService $uploads,
     ) {}
 
     /**
@@ -158,6 +160,7 @@ final class CreateGeneration
                     $user,
                 );
                 $generation = new Generation;
+                $this->uploads->retainForReference($composed['uploadIds']);
                 $generation->forceFill([
                     'campaign_id' => $persistedCampaign->id,
                     'pipeline_id' => $persistedPipeline->id,

@@ -85,12 +85,13 @@ final class PipelineFieldConfiguration
             $field->fixed_value = $hasFixedValue ? $value : null;
             $field->needs_configuration = false;
             $field->save();
-            if ($upload !== null) {
-                $current->inputUploads()->syncWithoutDetaching([$upload->id]);
-            }
             $referenced = $current->fields()->where('input_type', InputType::Image)->where('has_fixed_value', true)->get()
                 ->map(fn (PipelineField $field): mixed => is_array($field->fixed_value) ? ($field->fixed_value['__upload'] ?? null) : null)
                 ->filter(fn (mixed $id): bool => is_int($id))->unique()->values()->all();
+            $this->uploads->retainForReference($referenced);
+            if ($upload !== null) {
+                $current->inputUploads()->syncWithoutDetaching([$upload->id]);
+            }
             $current->inputUploads()->whereNotIn('input_uploads.id', $referenced)->get()->each(
                 fn ($upload) => $current->inputUploads()->detach($upload->id),
             );

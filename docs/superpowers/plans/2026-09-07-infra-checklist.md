@@ -60,7 +60,7 @@ Link `CLOUDFRONT_PRIVATE_KEY_BASE64` as a Cloud secret containing base64 of the 
 
 Preserve Redis semantics. Current Cloud docs give managed Flex **90 seconds of shutdown grace** and recommend Pro for longer jobs; they do not impose a fixed runtime cap. This corrects the earlier research interpretation. Our baseline remains a dedicated Worker cluster using Redis. Confirm its own termination behavior instead of assuming managed-queue grace applies; keep worker compute available while jobs are pending. [Cloud queues and Worker clusters](https://laravel.com/cloud/docs/queues).
 
-The current schedule has `media:reconcile` every minute with `withoutOverlapping()`, but no `onOneServer()`. Until Task 25 verifies replica locks and adds retention scheduling, use one scheduler replica. Multiple scheduler replicas are a release blocker. [Cloud scheduler replica guidance](https://laravel.com/cloud/docs/scheduled-tasks).
+The current schedule has `media:reconcile` every minute, `media:clean-inputs` hourly, and `queue:prune-failed` daily, each with `withoutOverlapping()` but no `onOneServer()`. Task 25 adds local retention coverage; remote replica-lock verification remains pending. Use one scheduler replica. Multiple scheduler replicas are a release blocker. [Cloud scheduler replica guidance](https://laravel.com/cloud/docs/scheduled-tasks).
 
 ### Build/release procedure — not configured yet
 
