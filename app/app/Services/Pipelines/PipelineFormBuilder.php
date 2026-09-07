@@ -5,10 +5,10 @@ namespace App\Services\Pipelines;
 use App\Enums\FieldRole;
 use App\Enums\FieldVisibility;
 use App\Enums\InputType;
+use App\Filament\Forms\Components\PrivateFileUpload;
 use App\Models\InputUpload;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -93,7 +93,7 @@ final class PipelineFormBuilder
             InputType::String => Textarea::make($name)
                 ->label($this->label($field))
                 ->rows($field->role === FieldRole::Prompt ? 4 : 2),
-            InputType::Image => FileUpload::make($name)
+            InputType::Image => PrivateFileUpload::make($name)
                 ->label($this->label($field))
                 ->image()
                 ->acceptedFileTypes(config('media.allowed_mimes'))

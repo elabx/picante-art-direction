@@ -2,8 +2,8 @@
 
 namespace App\Filament\Admin\Resources\Brands\Schemas;
 
+use App\Filament\Forms\Components\PrivateFileUpload;
 use App\Models\Brand;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
 use Filament\Infolists\Components\TextEntry;
@@ -35,7 +35,7 @@ class BrandForm
                     ->required()
                     ->maxLength(255)
                     ->unique(),
-                FileUpload::make('logo_path')
+                PrivateFileUpload::make('logo_path')
                     ->label('Logotipo')
                     ->disk('pieces')
                     ->directory('brands')

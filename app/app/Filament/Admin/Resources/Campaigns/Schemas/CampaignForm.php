@@ -2,9 +2,9 @@
 
 namespace App\Filament\Admin\Resources\Campaigns\Schemas;
 
+use App\Filament\Forms\Components\PrivateFileUpload;
 use App\Models\Campaign;
 use Filament\Forms\Components\DatePicker;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -29,7 +29,7 @@ class CampaignForm
             TextInput::make('slug')->label('Slug')->required()->maxLength(255)
                 ->unique(modifyRuleUsing: fn (Unique $rule, Get $get, ?Campaign $record): Unique => $rule->where('brand_id', $record?->brand_id ?? $get('brand_id'))),
             Textarea::make('description')->label('Descripción')->columnSpanFull(),
-            FileUpload::make('cover_path')->label('Portada')->disk('pieces')->directory('covers')->visibility('private')
+            PrivateFileUpload::make('cover_path')->label('Portada')->disk('pieces')->directory('covers')->visibility('private')
                 ->image()->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])->maxSize(20 * 1024),
             DatePicker::make('starts_on')->label('Fecha de inicio'),
             DatePicker::make('ends_on')->label('Fecha de fin')->afterOrEqual('starts_on'),

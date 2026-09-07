@@ -2,10 +2,10 @@
 
 namespace App\Filament\Admin\Resources\Pipelines\RelationManagers;
 
+use App\Filament\Forms\Components\PrivateFileUpload;
 use App\Models\PipelineField;
 use App\Services\Pipelines\PipelineFieldConfiguration;
 use Filament\Actions\EditAction;
-use Filament\Forms\Components\FileUpload;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
@@ -46,19 +46,10 @@ class FieldsRelationManager extends RelationManager
             Toggle::make('has_fixed_value')->label('Usar valor fijo')->live(),
             Group::make()->key('fixedValue')->schema(fn (Get $get): array => [
                 $get('input_type') === 'image'
-                    ? FileUpload::make('fixed_value')->label('Valor fijo')->disk('inputs')->directory('tmp')->visibility('private')
+                    ? PrivateFileUpload::make('fixed_value')->label('Valor fijo')->disk('inputs')->directory('tmp')->visibility('private')
                         ->image()->acceptedFileTypes(['image/jpeg', 'image/png', 'image/webp'])->maxSize(20 * 1024)
-                        ->getUploadedFileUsing(function (FileUpload $component, string $file, PipelineField $record): ?array {
-                            $segments = explode('/', $file);
-                            $isTemporary = count($segments) === 2 && $segments[0] === 'tmp'
-                                && ! in_array($segments[1], ['', '.', '..'], true)
-                                && ! str_contains($file, '\\') && ! str_contains($file, "\0");
-                            if (! $isTemporary && $file !== app(PipelineFieldConfiguration::class)->existingImagePath($record)) {
-                                return null;
-                            }
-
-                            return $component->getUploadedFile($file, null);
-                        })
+                        ->preventFilePathTampering(allowFilePathUsing: fn (string $file, PipelineField $record): bool => (str_starts_with($file, 'tmp/') && PrivateFileUpload::isCanonicalPath($file))
+                            || $file === app(PipelineFieldConfiguration::class)->existingImagePath($record))
                     : TextInput::make('fixed_value')->label('Valor fijo')->helperText('JSON válido o texto.'),
             ])->visible(fn (Get $get): bool => (bool) $get('has_fixed_value')),
             Select::make('role')->label('Vinculación')->options(['none' => 'Ninguno', 'prompt' => 'Prompt', 'image' => 'Imagen'])->required(),
