@@ -2,6 +2,8 @@
 
 namespace App\Providers\Filament;
 
+use App\Models\Brand;
+use Filament\Facades\Filament;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
@@ -17,6 +19,7 @@ use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
+use Illuminate\Support\Facades\Route;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AppPanelProvider extends PanelProvider
@@ -26,10 +29,19 @@ class AppPanelProvider extends PanelProvider
         return $panel
             ->id('app')
             ->path('app')
+            ->login()
+            ->brandName('Media Ops')
+            ->brandLogo(fn (): ?string => ($tenant = Filament::getTenant()) instanceof Brand
+                && filled($tenant->logo_path)
+                && Route::has('media.logo')
+                ? route('media.logo', $tenant)
+                : null)
+            ->tenant(Brand::class, slugAttribute: 'slug')
+            ->tenantMenu(fn (): bool => auth()->user()->brands()->count() > 1)
+            ->spa()
             ->colors([
-                'primary' => Color::Amber,
+                'primary' => Color::Red,
             ])
-            ->discoverResources(in: app_path('Filament/App/Resources'), for: 'App\Filament\App\Resources')
             ->discoverPages(in: app_path('Filament/App/Pages'), for: 'App\Filament\App\Pages')
             ->pages([
                 Dashboard::class,
