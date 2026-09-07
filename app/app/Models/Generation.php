@@ -12,11 +12,21 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use LogicException;
 
 class Generation extends Model
 {
     /** @use HasFactory<GenerationFactory> */
     use HasFactory;
+
+    protected static function booted(): void
+    {
+        static::saving(function (self $generation): void {
+            if ($generation->exists && $generation->isDirty('execution_snapshot')) {
+                throw new LogicException('El snapshot de ejecución no se puede modificar.');
+            }
+        });
+    }
 
     protected function casts(): array
     {

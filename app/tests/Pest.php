@@ -1,6 +1,12 @@
 <?php
 
 use App\Engines\FakeEngine;
+use App\Enums\FieldRole;
+use App\Enums\InputType;
+use App\Enums\PipelineKind;
+use App\Models\Campaign;
+use App\Models\Pipeline;
+use App\Models\PipelineField;
 use Database\Factories\GenerationFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
@@ -53,4 +59,24 @@ function fakeEngine(): FakeEngine
 function snapshot(array $overrides = []): array
 {
     return GenerationFactory::snapshot($overrides);
+}
+
+function readyGenerator(Campaign $campaign): Pipeline
+{
+    $pipeline = Pipeline::factory()->for($campaign)->create([
+        'kind' => PipelineKind::Generator,
+        'is_active' => true,
+        'readiness_errors' => [],
+        'input_schema' => ['properties' => []],
+        'config_revision' => 3,
+    ]);
+
+    PipelineField::factory()->for($pipeline)->create([
+        'name' => 'describe_la_escena',
+        'input_type' => InputType::String,
+        'role' => FieldRole::Prompt,
+        'required' => true,
+    ]);
+
+    return $pipeline->refresh();
 }
