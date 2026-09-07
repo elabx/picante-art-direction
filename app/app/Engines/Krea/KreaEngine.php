@@ -24,6 +24,7 @@ final class KreaEngine implements ImageEngine
     public function __construct(
         private readonly string $apiKey,
         private readonly string $baseUrl = 'https://api.krea.ai',
+        private readonly ?\Closure $responseObserver = null,
     ) {}
 
     public function describe(string $providerRef): EngineSchema
@@ -67,6 +68,7 @@ final class KreaEngine implements ImageEngine
         }
 
         $payload = $this->json($response);
+        $this->observeResponse('submit', $providerRef, $payload);
         $detail = $this->providerDetail($payload);
 
         if ($response->status() >= 500) {
@@ -113,6 +115,7 @@ final class KreaEngine implements ImageEngine
         }
 
         $payload = $this->json($response);
+        $this->observeResponse('job', $jobId, $payload);
 
         if (! $response->successful()) {
             throw new KreaException(
@@ -248,6 +251,13 @@ final class KreaEngine implements ImageEngine
         }
 
         return is_array($value) ? $this->sanitizeErrorArray($value) : $value;
+    }
+
+    private function observeResponse(string $operation, string $reference, mixed $payload): void
+    {
+        if ($this->responseObserver !== null) {
+            ($this->responseObserver)($operation, $reference, $payload);
+        }
     }
 
     private function normalizeStatus(string $nativeStatus): string

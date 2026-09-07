@@ -15,5 +15,6 @@ return [
     'krea' => [
         'base_url' => env('KREA_BASE_URL', 'https://api.krea.ai'),
         'key' => env('KREA_API_KEY'),
+        'fixture_path' => base_path('tests/Fixtures/krea'),
     ],
 ];
