@@ -1,0 +1,17 @@
+{
+    "name": "CREADOR SANTANDER",
+    "node_app_version_id": "fbe97b3b-d810-4de4-859f-49aa2a7887ab",
+    "input_openapi_schema": {
+        "type": "object",
+        "properties": {
+            "describe_la_escena": {
+                "type": "string",
+                "x-krea-wire-type": "text",
+                "description": "DESCRIBE LA ESCENA "
+            }
+        },
+        "required": [
+            "describe_la_escena"
+        ]
+    }
+}

@@ -1,0 +1,23 @@
+{
+    "name": "EDITOR SANTANDER",
+    "node_app_version_id": "1276c054-ee4c-4ec4-8e2f-8c8b9901557b",
+    "input_openapi_schema": {
+        "type": "object",
+        "properties": {
+            "foto_para_editar": {
+                "type": "string",
+                "x-krea-wire-type": "image",
+                "format": "uri",
+                "description": "FOTO PARA EDITAR"
+            },
+            "quiero_editar": {
+                "type": "string",
+                "x-krea-wire-type": "text",
+                "description": "QUIERO EDITAR "
+            }
+        },
+        "required": [
+            "foto_para_editar"
+        ]
+    }
+}
