@@ -12,8 +12,10 @@ use App\Engines\KreaException;
 use App\Engines\ResultFlattener;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Throwable;
 
 final class KreaEngine implements ImageEngine
 {
@@ -27,7 +29,9 @@ final class KreaEngine implements ImageEngine
     public function describe(string $providerRef): EngineSchema
     {
         try {
-            $response = $this->http(15)->get("/node-apps/{$providerRef}");
+            $response = $this->http(15)
+                ->retry(2, 100, $this->shouldRetryDescribe(...), throw: false)
+                ->get("/node-apps/{$providerRef}");
         } catch (ConnectionException) {
             throw new KreaException(KreaErrorMessages::network(), null);
         }
@@ -154,6 +158,19 @@ final class KreaEngine implements ImageEngine
             ->withoutRedirecting()
             ->connectTimeout(5)
             ->timeout($timeout);
+    }
+
+    private function shouldRetryDescribe(Throwable $exception): bool
+    {
+        if ($exception instanceof ConnectionException) {
+            return true;
+        }
+
+        if (! $exception instanceof RequestException) {
+            return false;
+        }
+
+        return $exception->response->serverError() || $exception->response->tooManyRequests();
     }
 
     private function json(Response $response): mixed

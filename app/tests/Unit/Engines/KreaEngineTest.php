@@ -86,9 +86,37 @@ it('treats a 5xx submit response as unknown', function () {
 });
 
 it('wraps a connection failure on describe into KreaException', function () {
-    Http::fake(['*/node-apps/*' => Http::failedConnection()]);
+    $calls = 0;
+    Http::fake(['*/node-apps/*' => function () use (&$calls) {
+        $calls++;
+
+        return Http::failedConnection();
+    }]);
 
     expect(fn () => $this->engine->describe('ver-1'))->toThrow(KreaException::class, 'No se pudo conectar con el servicio.');
+    expect($calls)->toBe(2);
+});
+
+it('retries one transient describe response before returning its schema', function () {
+    $calls = 0;
+    $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/krea/schema-generator.json')), true, flags: JSON_THROW_ON_ERROR);
+    Http::fake(['*/node-apps/ver-1' => function () use (&$calls, $fixture) {
+        $calls++;
+
+        return $calls === 1 ? Http::response(['message' => 'temporary failure'], 503) : Http::response($fixture);
+    }]);
+
+    $schema = $this->engine->describe('ver-1');
+
+    expect($schema->versionId)->toBe('fbe97b3b-d810-4de4-859f-49aa2a7887ab')
+        ->and($calls)->toBe(2);
+});
+
+it('does not retry a nontransient describe response', function () {
+    Http::fake(['*/node-apps/ver-1' => Http::response(['message' => 'invalid request'], 400)]);
+
+    expect(fn () => $this->engine->describe('ver-1'))->toThrow(KreaException::class, 'Solicitud inválida. invalid request');
+    Http::assertSentCount(1);
 });
 
 it('treats an empty malformed or job id-less body as unknown', function (mixed $body) {

@@ -32,7 +32,7 @@ final class KreaErrorMessages
             return null;
         }
 
-        $sanitized = preg_replace('#data:[a-z]+/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=]+#i', '[data-url]', $detail);
+        $sanitized = preg_replace('#data:[^\s]+#i', '[data-url]', $detail);
         $sanitized = preg_replace('#Bearer\s+\S+#i', 'Bearer [redacted]', $sanitized ?? '');
         $sanitized = preg_replace('#(https?://[^\s?]+)\?[^\s]+#i', '$1', $sanitized ?? '');
         $sanitized = preg_replace_callback('#[A-Za-z0-9_\-:]{24,}#', function (array $match): string {

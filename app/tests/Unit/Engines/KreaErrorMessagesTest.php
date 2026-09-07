@@ -30,3 +30,11 @@ it('redacts key-shaped tokens data urls bearer tokens and signed url queries bef
         ->not->toContain('?signature=')
         ->and(strlen($out))->toBeLessThanOrEqual(2048);
 });
+
+it('redacts non-base64 data urls with optional media parameters', function () {
+    $out = KreaErrorMessages::sanitizeDetail('invalid data:text/plain;charset=utf-8,secret-value and data:image/svg+xml,%3Csvg%3E');
+
+    expect($out)->not->toContain('data:text/plain')
+        ->not->toContain('data:image/svg+xml')
+        ->not->toContain('secret-value');
+});
