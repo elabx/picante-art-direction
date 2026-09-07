@@ -7,6 +7,7 @@ use Database\Factories\PipelineFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Pipeline extends Model
@@ -54,6 +55,11 @@ class Pipeline extends Model
     public function activeFields(): HasMany
     {
         return $this->fields()->where('stale', false);
+    }
+
+    public function inputUploads(): BelongsToMany
+    {
+        return $this->belongsToMany(InputUpload::class, 'pipeline_inputs');
     }
 
     public function isReady(): bool
