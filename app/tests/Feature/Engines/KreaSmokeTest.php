@@ -37,10 +37,10 @@ it('records sanitized multi-job evidence and output measurements from one submis
         'https://api.krea.test/jobs/b4e26a48-29f4-4ec4-a268-0b4e0cde2222' => Http::response([
             'job_id' => 'b4e26a48-29f4-4ec4-a268-0b4e0cde2222',
             'status' => 'completed',
-            'result' => ['urls' => ['https://cdn.krea.test/b.png?signature=secret']],
+            'result' => ['urls' => ['https://dummy-key.example/b.png?signature=secret']],
         ]),
         'https://cdn.krea.test/a.png?signature=secret' => Http::response(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9VwAAAABJRU5ErkJggg==', true), 200, ['Content-Type' => 'image/png']),
-        'https://cdn.krea.test/b.png?signature=secret' => Http::response(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9VwAAAABJRU5ErkJggg==', true), 200, ['Content-Type' => 'image/png']),
+        'https://dummy-key.example/b.png?signature=secret' => Http::response(base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL9VwAAAABJRU5ErkJggg==', true), 200, ['Content-Type' => 'image/png']),
     ]);
 
     $this->artisan('krea:smoke', [
@@ -49,6 +49,7 @@ it('records sanitized multi-job evidence and output measurements from one submis
         '--image' => ["photo={$imagePath}"],
         '--name' => 'multi-job',
     ])->expectsOutputToContain('cdn.krea.test 1x1')
+        ->expectsOutputToContain('[redacted].example 1x1')
         ->assertSuccessful();
 
     $submit = (string) file_get_contents($this->fixtureDirectory.'/multi-job-submit.json');
@@ -61,6 +62,7 @@ it('records sanitized multi-job evidence and output measurements from one submis
         ->toContain('job-1')
         ->and($jobs)->not->toContain('?signature=')
         ->not->toContain(base64_encode((string) file_get_contents($imagePath)))
+        ->and(json_encode($result, JSON_THROW_ON_ERROR))->not->toContain('dummy-key')
         ->and($result['outputs'])->toHaveCount(2)
         ->and($result['outputs'][0])->toMatchArray(['host' => 'cdn.krea.test', 'width' => 1, 'height' => 1]);
     Http::assertSentCount(5);
@@ -111,6 +113,19 @@ it('rejects a missing key and malformed or duplicate options before submitting',
         'versionId' => 'ver-1',
         '--input' => ['not-a-pair', 'prompt=one', 'prompt=two'],
         '--name' => 'bad-input',
+    ])->assertFailed();
+
+    Http::assertNothingSent();
+});
+
+it('rejects an aggregate request that exceeds the configured limit before submitting', function (): void {
+    config()->set('media.max_request_bytes', 20);
+    Http::fake();
+
+    $this->artisan('krea:smoke', [
+        'versionId' => 'ver-1',
+        '--input' => ['prompt=too-many-bytes-for-limit'],
+        '--name' => 'request-too-large',
     ])->assertFailed();
 
     Http::assertNothingSent();

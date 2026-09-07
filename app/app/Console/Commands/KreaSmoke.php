@@ -53,6 +53,7 @@ final class KreaSmoke extends Command
             $this->fixtureName = $this->validatedName();
             $this->fixtureDirectory = (string) config('media.krea.fixture_path', base_path('tests/Fixtures/krea'));
             $inputs = $this->inputs();
+            $this->ensureRequestWithinLimit($inputs);
             $this->reserveName();
 
             $engine = new KreaEngine(
@@ -155,6 +156,16 @@ final class KreaSmoke extends Command
         }
 
         return 'data:'.$mime.';base64,'.base64_encode($contents);
+    }
+
+    /** @param array<string, mixed> $inputs */
+    private function ensureRequestWithinLimit(array $inputs): void
+    {
+        $payload = json_encode($inputs, JSON_THROW_ON_ERROR);
+
+        if (strlen($payload) > (int) config('media.max_request_bytes')) {
+            throw new \InvalidArgumentException('La solicitud supera el límite permitido.');
+        }
     }
 
     private function validatedName(): string
@@ -269,7 +280,7 @@ final class KreaSmoke extends Command
                 $dimensions = @getimagesizefromstring($body);
                 $metadata = [
                     'url' => $this->safeString($url),
-                    'host' => $parts['host'],
+                    'host' => $this->safeString($parts['host']),
                     'bytes' => strlen($body),
                     'width' => is_array($dimensions) ? $dimensions[0] : null,
                     'height' => is_array($dimensions) ? $dimensions[1] : null,
