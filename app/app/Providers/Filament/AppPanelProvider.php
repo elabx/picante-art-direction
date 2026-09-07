@@ -8,7 +8,6 @@ use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
-use Filament\Pages\Dashboard;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -20,6 +19,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\HtmlString;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 class AppPanelProvider extends PanelProvider
@@ -31,10 +31,10 @@ class AppPanelProvider extends PanelProvider
             ->path('app')
             ->login()
             ->brandName('Media Ops')
-            ->brandLogo(fn (): ?string => ($tenant = Filament::getTenant()) instanceof Brand
+            ->brandLogo(fn (): HtmlString|string|null => ($tenant = Filament::getTenant()) instanceof Brand
                 && filled($tenant->logo_path)
                 && Route::has('media.logo')
-                ? route('media.logo', $tenant)
+                ? new HtmlString('<img alt="'.e($tenant->name).'" src="'.e(route('media.logo', $tenant)).'" onerror="if(!this.dataset.r){this.dataset.r=1;this.src=this.src.split(\'?\')[0]+\'?r=\'+Date.now();}">')
                 : null)
             ->tenant(Brand::class, slugAttribute: 'slug')
             ->tenantMenu(fn (): bool => auth()->user()->brands()->count() > 1)
@@ -43,9 +43,6 @@ class AppPanelProvider extends PanelProvider
                 'primary' => Color::Red,
             ])
             ->discoverPages(in: app_path('Filament/App/Pages'), for: 'App\Filament\App\Pages')
-            ->pages([
-                Dashboard::class,
-            ])
             ->discoverWidgets(in: app_path('Filament/App/Widgets'), for: 'App\Filament\App\Widgets')
             ->widgets([
                 AccountWidget::class,

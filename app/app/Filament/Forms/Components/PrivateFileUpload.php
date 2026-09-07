@@ -2,11 +2,15 @@
 
 namespace App\Filament\Forms\Components;
 
+use App\Models\Brand;
+use App\Models\Campaign;
+use App\Models\InputUpload;
 use App\Services\Media\SignedUrlProvider;
 use App\Support\Media;
 use Filament\Forms\Components\FileUpload;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -55,14 +59,37 @@ class PrivateFileUpload extends FileUpload
         }
 
         try {
+            $url = $this->finalizedMediaUrl($file);
+
             return [
                 'name' => ($this->isMultiple() ? ($storedFileNames[$file] ?? null) : $storedFileNames) ?? basename($file),
                 'size' => $this->shouldFetchFileInformation() ? $this->getDisk()->size($file) : 0,
                 'type' => $this->shouldFetchFileInformation() ? $this->getDisk()->mimeType($file) : null,
-                'url' => Str::sanitizeUrl(app(SignedUrlProvider::class)->url($this->getDiskName(), $file, Media::ttl())),
+                'url' => Str::sanitizeUrl($url ?? app(SignedUrlProvider::class)->url($this->getDiskName(), $file, Media::ttl())),
             ];
         } catch (Throwable) {
             return null;
         }
+    }
+
+    private function finalizedMediaUrl(string $file): ?string
+    {
+        $record = $this->getRecord()?->fresh();
+
+        if ($record instanceof Campaign && $this->getName() === 'cover_path' && $record->cover_path === $file && Route::has('media.cover')) {
+            return route('media.cover', $record);
+        }
+
+        if ($record instanceof Brand && $this->getName() === 'logo_path' && $record->logo_path === $file && Route::has('media.logo')) {
+            return route('media.logo', $record);
+        }
+
+        $upload = InputUpload::query()->where('storage_path', $file)->first();
+
+        if ($upload !== null && Route::has('media.upload')) {
+            return route('media.upload', $upload);
+        }
+
+        return null;
     }
 }
