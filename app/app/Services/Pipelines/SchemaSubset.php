@@ -91,9 +91,10 @@ final class SchemaSubset
 
         if (is_array($value)) {
             $types = array_values($value);
-            $nonNullTypes = array_values(array_filter($types, fn (mixed $type): bool => $type !== 'null'));
-            if (count($types) === 2 && count($nonNullTypes) === 1 && in_array($nonNullTypes[0], ['string', 'integer', 'number', 'boolean'], true)) {
-                return $nonNullTypes[0];
+            $nullableTypes = array_values(array_filter($types, fn (mixed $type): bool => $type === 'null'));
+            $primitiveTypes = array_values(array_filter($types, fn (mixed $type): bool => $type !== 'null'));
+            if (count($types) === 2 && count($nullableTypes) === 1 && count($primitiveTypes) === 1 && in_array($primitiveTypes[0], ['string', 'integer', 'number', 'boolean'], true)) {
+                return $primitiveTypes[0];
             }
 
             $errors[] = 'Tipo no soportado: union';

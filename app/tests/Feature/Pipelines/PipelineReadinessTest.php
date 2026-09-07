@@ -102,6 +102,19 @@ it('rejects malformed constraints in fixed value schemas', function (): void {
         ->and(app(PipelineReadiness::class)->validateValue($invalidMinimum, 'text'))->toBeFalse();
 });
 
+it('reports malformed scalar enums without throwing while evaluating fixed values', function (): void {
+    $pipeline = pipelineWithProperties(['estilo' => ['type' => 'string']]);
+    PipelineField::factory()->for($pipeline)->create([
+        'name' => 'estilo',
+        'has_fixed_value' => true,
+        'fixed_value' => 'editorial',
+        'source_schema' => ['type' => 'string', 'enum' => 'not-an-array'],
+    ]);
+
+    expect(app(PipelineReadiness::class)->evaluate($pipeline->refresh()))
+        ->toContain('Campo estilo: tipo no soportado.', 'Campo estilo: el valor fijo no es válido.');
+});
+
 it('rejects fixed values on bound fields', function (): void {
     $pipeline = pipelineWithProperties(['prompt' => ['type' => 'string']]);
     PipelineField::factory()->for($pipeline)->create([

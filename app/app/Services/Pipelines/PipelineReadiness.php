@@ -163,6 +163,10 @@ final class PipelineReadiness
 
     private function hasValidConstraints(array $schema): bool
     {
+        if (array_key_exists('enum', $schema) && ! is_array($schema['enum'])) {
+            return false;
+        }
+
         if (array_key_exists('nullable', $schema) && ! is_bool($schema['nullable'])) {
             return false;
         }

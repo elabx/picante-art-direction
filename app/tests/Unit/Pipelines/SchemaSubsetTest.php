@@ -35,6 +35,8 @@ it('reports every unsupported schema concern', function (array $schema, string $
 it('rejects malformed nullable and enum schemas', function (): void {
     expect(SchemaSubset::classify(['type' => ['string', 'integer']], 'union')['errors'])
         ->toContain('Tipo no soportado: union')
+        ->and(SchemaSubset::classify(['type' => ['string', null]], 'nullable')['errors'])
+        ->toContain('Tipo no soportado: union')
         ->and(SchemaSubset::classify(['type' => 'string', 'enum' => [['bad']]], 'enum')['errors'])
         ->toContain('Tipo no soportado: enum no escalar');
 });
