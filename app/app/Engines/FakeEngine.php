@@ -6,6 +6,7 @@ use App\Engines\Data\EngineSchema;
 use App\Engines\Data\JobObservation;
 use App\Engines\Data\OutputRef;
 use App\Engines\Data\SubmissionOutcome;
+use Closure;
 
 final class FakeEngine implements ImageEngine
 {
@@ -23,6 +24,8 @@ final class FakeEngine implements ImageEngine
 
     private ?SubmissionOutcome $nextOutcome = null;
 
+    private ?Closure $duringDescribe = null;
+
     /**
      * @var array<string, JobObservation>
      */
@@ -31,6 +34,16 @@ final class FakeEngine implements ImageEngine
     public function withSchema(string $ref, ?array $schema, string $name = 'Fake app'): self
     {
         $this->schemas[$ref] = new EngineSchema($name, $ref, $schema);
+
+        return $this;
+    }
+
+    /**
+     * @param  Closure(string): void  $callback
+     */
+    public function duringDescribe(Closure $callback): self
+    {
+        $this->duringDescribe = $callback;
 
         return $this;
     }
@@ -68,6 +81,10 @@ final class FakeEngine implements ImageEngine
 
     public function describe(string $providerRef): EngineSchema
     {
+        if ($this->duringDescribe !== null) {
+            ($this->duringDescribe)($providerRef);
+        }
+
         return $this->schemas[$providerRef] ?? throw new KreaException('No se encontró el flujo.', 404);
     }
 
