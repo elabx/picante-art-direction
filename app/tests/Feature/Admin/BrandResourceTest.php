@@ -5,6 +5,9 @@ use App\Filament\Admin\Resources\Brands\Pages\CreateBrand;
 use App\Filament\Admin\Resources\Brands\Pages\EditBrand;
 use App\Models\Brand;
 use App\Models\User;
+use Filament\Forms\Components\TextInput;
+use Filament\Forms\Components\Toggle;
+use Filament\Notifications\Notification;
 use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
 
@@ -84,6 +87,30 @@ it('tests a brand connection through the configured fake engine', function (): v
         ->and($engine->pingCalls)->toBe(1);
 });
 
+it('shows a mapped danger notification when the studio key is unavailable', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    config(['media.krea.key' => null]);
+    $brand = Brand::factory()->create();
+
+    Livewire::test(EditBrand::class, ['record' => $brand->id])
+        ->callAction('ping')
+        ->assertNotified(
+            Notification::make()->danger()->title('Clave de acceso inválida o faltante.'),
+        );
+});
+
+it('renders Spanish labels for brand fields under the Spanish locale', function (): void {
+    app()->setLocale('es');
+    $this->actingAs(User::factory()->artDirector()->create());
+
+    Livewire::test(CreateBrand::class)
+        ->assertSchemaComponentExists('name', checkComponentUsing: fn (TextInput $component): bool => $component->getLabel() === 'Nombre')
+        ->assertSchemaComponentExists('slug', checkComponentUsing: fn (TextInput $component): bool => $component->getLabel() === 'Slug')
+        ->assertSchemaComponentExists('logo_path', checkComponentUsing: fn ($component): bool => $component->getLabel() === 'Logotipo')
+        ->assertSchemaComponentExists('krea_api_key', checkComponentUsing: fn (TextInput $component): bool => $component->getLabel() === 'Clave de API de Krea')
+        ->assertSchemaComponentExists('use_studio_key', checkComponentUsing: fn (Toggle $component): bool => $component->getLabel() === 'Usar la clave del estudio');
+});
+
 it('denies editors direct access to brand resource forms', function (): void {
     $this->actingAs(User::factory()->editor()->create());
 
@@ -98,4 +125,15 @@ it('denies a direct create call after an art director role is revoked', function
     $operator->update(['role' => 'editor']);
 
     $component->call('create')->assertForbidden();
+});
+
+it('denies the brand connection action after an art director role is revoked', function (): void {
+    $operator = User::factory()->artDirector()->create();
+    $this->actingAs($operator);
+    $brand = Brand::factory()->create();
+    $component = Livewire::test(EditBrand::class, ['record' => $brand->id]);
+
+    $operator->update(['role' => 'editor']);
+
+    $component->assertActionHidden('ping');
 });

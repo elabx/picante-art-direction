@@ -19,6 +19,7 @@ class BrandForm
         return $schema
             ->components([
                 TextInput::make('name')
+                    ->label('Nombre')
                     ->required()
                     ->maxLength(255)
                     ->live(onBlur: true)
@@ -30,10 +31,12 @@ class BrandForm
                         }
                     }),
                 TextInput::make('slug')
+                    ->label('Slug')
                     ->required()
                     ->maxLength(255)
                     ->unique(),
                 FileUpload::make('logo_path')
+                    ->label('Logotipo')
                     ->disk('pieces')
                     ->directory('brands')
                     ->image()
@@ -41,6 +44,7 @@ class BrandForm
                     ->maxSize(20 * 1024)
                     ->visibility('private'),
                 TextInput::make('krea_api_key')
+                    ->label('Clave de API de Krea')
                     ->password()
                     ->revealable(false)
                     ->dehydrated(fn (?string $state): bool => filled($state))

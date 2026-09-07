@@ -14,8 +14,8 @@ class BrandsTable
     {
         return $table
             ->columns([
-                TextColumn::make('name')->searchable()->sortable(),
-                TextColumn::make('slug')->searchable()->sortable(),
+                TextColumn::make('name')->label('Nombre')->searchable()->sortable(),
+                TextColumn::make('slug')->label('Slug')->searchable()->sortable(),
                 TextColumn::make('users_count')->counts('users')->label('Usuarios'),
                 TextColumn::make('campaigns_count')->counts('campaigns')->label('Campañas'),
             ])

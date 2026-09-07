@@ -107,6 +107,16 @@ it('pings the node apps endpoint and maps provider failures without exposing the
         && $request->hasHeader('Authorization', 'Bearer dummy-key'));
 });
 
+it('pings the node apps endpoint successfully', function (): void {
+    Http::fake(['https://api.krea.test/node-apps?limit=1' => Http::response([])]);
+
+    $this->engine->ping();
+
+    Http::assertSent(fn ($request): bool => $request->method() === 'GET'
+        && $request->url() === 'https://api.krea.test/node-apps?limit=1'
+        && $request->hasHeader('Authorization', 'Bearer dummy-key'));
+});
+
 it('retries one transient describe response before returning its schema', function () {
     $calls = 0;
     $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/krea/schema-generator.json')), true, flags: JSON_THROW_ON_ERROR);
