@@ -4,6 +4,7 @@ use App\Enums\FieldRole;
 use App\Enums\FieldVisibility;
 use App\Enums\InputType;
 use App\Enums\PipelineKind;
+use App\Models\InputUpload;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
 use App\Services\Pipelines\PipelineReadiness;
@@ -126,6 +127,55 @@ it('rejects fixed values on bound fields', function (): void {
 
     expect(app(PipelineReadiness::class)->evaluate($pipeline->refresh()))
         ->toContain('Campo prompt: un campo vinculado no puede tener valor fijo.');
+});
+
+it('accepts a fixed image upload linked to the pipeline from its campaign brand', function (): void {
+    $pipeline = pipelineWithProperties(['referencia' => ['type' => 'string', 'format' => 'uri']]);
+    $upload = InputUpload::factory()->for($pipeline->campaign->brand)->create();
+    $pipeline->inputUploads()->attach($upload);
+    PipelineField::factory()->for($pipeline)->create([
+        'name' => 'referencia',
+        'input_type' => InputType::Image,
+        'visibility' => FieldVisibility::Hidden,
+        'has_fixed_value' => true,
+        'fixed_value' => ['__upload' => $upload->id],
+        'source_schema' => ['type' => 'string', 'format' => 'uri'],
+    ]);
+
+    expect(app(PipelineReadiness::class)->evaluate($pipeline->refresh()))->toBe([]);
+});
+
+it('rejects unlinked, foreign, and malformed fixed image upload references', function (): void {
+    $pipeline = pipelineWithProperties(['referencia' => ['type' => 'string', 'format' => 'uri']]);
+    $sameBrandUnlinked = InputUpload::factory()->for($pipeline->campaign->brand)->create();
+    $foreignLinked = InputUpload::factory()->create();
+    $pipeline->inputUploads()->attach($foreignLinked);
+    $references = [
+        ['__upload' => $sameBrandUnlinked->id],
+        ['__upload' => $foreignLinked->id],
+        ['__upload' => 999999],
+        ['__upload' => 'not-an-id'],
+        ['__upload' => $sameBrandUnlinked->id, 'extra' => true],
+    ];
+
+    foreach ($references as $index => $reference) {
+        PipelineField::factory()->for($pipeline)->create([
+            'name' => "referencia_{$index}",
+            'input_type' => InputType::Image,
+            'has_fixed_value' => true,
+            'fixed_value' => $reference,
+            'source_schema' => ['type' => 'string', 'format' => 'uri'],
+        ]);
+    }
+
+    expect(app(PipelineReadiness::class)->evaluate($pipeline->refresh()))
+        ->toContain(
+            'Campo referencia_0: el valor fijo no es válido.',
+            'Campo referencia_1: el valor fijo no es válido.',
+            'Campo referencia_2: el valor fijo no es válido.',
+            'Campo referencia_3: el valor fijo no es válido.',
+            'Campo referencia_4: el valor fijo no es válido.',
+        );
 });
 
 it('requires one image and one prompt binding for editors', function (): void {

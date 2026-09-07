@@ -24,7 +24,7 @@ final class PipelineReadiness
         $errors = [];
 
         foreach ($fields as $field) {
-            $this->appendFieldErrors($field, $errors);
+            $this->appendFieldErrors($pipeline, $field, $errors);
         }
 
         $this->appendKindErrors($pipeline->kind, $fields->all(), $errors);
@@ -63,7 +63,7 @@ final class PipelineReadiness
     /**
      * @param  list<string>  $errors
      */
-    private function appendFieldErrors(PipelineField $field, array &$errors): void
+    private function appendFieldErrors(Pipeline $pipeline, PipelineField $field, array &$errors): void
     {
         $classification = SchemaSubset::classify($field->source_schema ?? [], $field->name);
         if ($field->input_type === InputType::Unknown || $classification['errors'] !== []) {
@@ -78,13 +78,43 @@ final class PipelineReadiness
             $errors[] = "Campo {$field->name}: es obligatorio y no tiene valor fijo.";
         }
 
-        if ($field->has_fixed_value && ! $this->validateValue($field, $field->fixed_value)) {
+        if ($field->has_fixed_value && ! $this->hasValidFixedValue($pipeline, $field)) {
             $errors[] = "Campo {$field->name}: el valor fijo no es válido.";
         }
 
         if ($field->has_fixed_value && $field->role !== FieldRole::None) {
             $errors[] = "Campo {$field->name}: un campo vinculado no puede tener valor fijo.";
         }
+    }
+
+    private function hasValidFixedValue(Pipeline $pipeline, PipelineField $field): bool
+    {
+        if (! is_array($field->fixed_value)) {
+            return $this->validateValue($field, $field->fixed_value);
+        }
+
+        return $this->isLinkedImageUploadReference($pipeline, $field, $field->fixed_value);
+    }
+
+    /**
+     * @param  array<array-key, mixed>  $value
+     */
+    private function isLinkedImageUploadReference(Pipeline $pipeline, PipelineField $field, array $value): bool
+    {
+        if ($field->input_type !== InputType::Image
+            || array_keys($value) !== ['__upload']
+            || ! is_int($value['__upload'])
+            || $value['__upload'] < 1) {
+            return false;
+        }
+
+        $brandId = $pipeline->campaign()->value('brand_id');
+
+        return is_int($brandId)
+            && $pipeline->inputUploads()
+                ->whereKey($value['__upload'])
+                ->where('brand_id', $brandId)
+                ->exists();
     }
 
     /**
