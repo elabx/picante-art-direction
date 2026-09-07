@@ -49,6 +49,40 @@ it('uses stable series and version labels, and exposes gallery actions', functio
     expect($firstGeneration->id)->not->toBe($secondGeneration->id);
 });
 
+it('keeps semantic labels stable across displayed order, pagination, and filters', function (): void {
+    [$editor, , $campaign] = editorInCampaign();
+    $secondSeries = Generation::factory()->for($campaign)->create(['created_at' => now()]);
+    $firstSeries = Generation::factory()->for($campaign)->create(['created_at' => now()->subMinute()]);
+    $secondOriginal = Piece::factory()->for($secondSeries)->for($campaign)->create(['kind' => 'original']);
+    $firstOriginal = Piece::factory()->for($firstSeries)->for($campaign)->create(['kind' => 'original']);
+    $edit = Piece::factory()->for($firstSeries)->for($campaign)->create([
+        'kind' => 'edit',
+        'parent_piece_id' => $firstOriginal->id,
+        'root_piece_id' => $firstOriginal->id,
+        'selected' => true,
+    ]);
+    $upscale = Piece::factory()->for($firstSeries)->for($campaign)->create([
+        'kind' => 'upscale',
+        'parent_piece_id' => $edit->id,
+        'root_piece_id' => $firstOriginal->id,
+    ]);
+
+    $gallery = Livewire::actingAs($editor)->test(Gallery::class, ['campaign' => $campaign->slug])
+        ->set('tableRecordsPerPage', 2)
+        ->assertCanSeeTableRecords([$secondOriginal, $firstOriginal], inOrder: true)
+        ->assertTableColumnStateSet('series_version', 'S2', $secondOriginal)
+        ->assertTableColumnStateSet('series_version', 'S1', $firstOriginal);
+
+    $gallery->call('setPage', 2)
+        ->assertCanSeeTableRecords([$edit, $upscale], inOrder: true)
+        ->assertTableColumnStateSet('series_version', 'v2', $edit)
+        ->assertTableColumnStateSet('series_version', 'v3', $upscale);
+
+    $gallery->filterTable('kind', 'selected')
+        ->assertCanSeeTableRecords([$edit])
+        ->assertTableColumnStateSet('series_version', 'v2', $edit);
+});
+
 it('does not expose foreign or soft deleted campaigns in the gallery', function (): void {
     [$editor, $brand] = editorInCampaign();
     $foreignBrand = Brand::factory()->create();

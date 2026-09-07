@@ -27,7 +27,10 @@ it('validates and hashes a changed password while preserving a blank password', 
     [$editor] = editorInCampaign();
     $originalHash = $editor->password;
 
-    Livewire::actingAs($editor)->test(Settings::class)
+    $settings = Livewire::actingAs($editor)->test(Settings::class)
+        ->assertFormSet(['password' => null, 'password_confirmation' => null]);
+
+    $settings
         ->fillForm(['name' => $editor->name, 'email' => $editor->email, 'password' => 'secret-one', 'password_confirmation' => 'different'])
         ->call('save')
         ->assertHasFormErrors(['password']);
@@ -35,7 +38,8 @@ it('validates and hashes a changed password while preserving a blank password', 
     Livewire::actingAs($editor)->test(Settings::class)
         ->fillForm(['name' => $editor->name, 'email' => $editor->email])
         ->call('save')
-        ->assertHasNoFormErrors();
+        ->assertHasNoFormErrors()
+        ->assertFormSet(['password' => null, 'password_confirmation' => null]);
 
     expect($editor->fresh()->password)->toBe($originalHash);
 
