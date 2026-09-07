@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\FailureReason;
 use App\Enums\OutputStatus;
 use Database\Factories\GenerationOutputFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -18,6 +19,8 @@ class GenerationOutput extends Model
     {
         return [
             'status' => OutputStatus::class,
+            'failure_reason' => FailureReason::class,
+            'claim_version' => 'integer',
             'next_attempt_at' => 'datetime',
         ];
     }

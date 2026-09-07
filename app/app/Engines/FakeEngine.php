@@ -7,6 +7,7 @@ use App\Engines\Data\JobObservation;
 use App\Engines\Data\OutputRef;
 use App\Engines\Data\SubmissionOutcome;
 use Closure;
+use Throwable;
 
 final class FakeEngine implements ImageEngine
 {
@@ -16,6 +17,9 @@ final class FakeEngine implements ImageEngine
     public array $submissions = [];
 
     public int $pingCalls = 0;
+
+    /** @var array<string, Throwable> */
+    private array $inspectFailures = [];
 
     /**
      * @var array<string, EngineSchema>
@@ -74,6 +78,7 @@ final class FakeEngine implements ImageEngine
 
     public function setJob(string $jobId, JobObservation $obs): self
     {
+        unset($this->inspectFailures[$jobId]);
         $this->jobs[$jobId] = $obs;
 
         return $this;
@@ -98,8 +103,19 @@ final class FakeEngine implements ImageEngine
         return $this->nextOutcome ?? SubmissionOutcome::accepted(['job-'.count($this->submissions)]);
     }
 
+    public function failInspect(string $jobId, Throwable $exception): self
+    {
+        $this->inspectFailures[$jobId] = $exception;
+
+        return $this;
+    }
+
     public function inspect(string $jobId): JobObservation
     {
+        if (isset($this->inspectFailures[$jobId])) {
+            throw $this->inspectFailures[$jobId];
+        }
+
         return $this->jobs[$jobId] ?? new JobObservation('pending', 'queued', null, null, null);
     }
 

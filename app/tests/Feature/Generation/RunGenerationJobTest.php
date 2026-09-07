@@ -47,6 +47,7 @@ it('marks unknown outcomes as submission unknown and never resubmits', function 
 });
 
 it('continues accepted work after its campaign is soft deleted', function (): void {
+    Queue::fake([PollGenerationJob::class]);
     $engine = fakeEngine()->willAccept(['j1']);
     $generation = Generation::factory()->create(['status' => GenerationStatus::Pending]);
     $generation->campaign->delete();
@@ -55,6 +56,7 @@ it('continues accepted work after its campaign is soft deleted', function (): vo
 
     expect($engine->submissions)->toHaveCount(1)
         ->and($generation->fresh()->status)->toBe(GenerationStatus::Submitted);
+    Queue::assertPushed(PollGenerationJob::class, 1);
 });
 
 it('expands upload and piece references into data urls', function (): void {
