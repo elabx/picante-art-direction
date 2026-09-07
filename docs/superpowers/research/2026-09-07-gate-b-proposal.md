@@ -1,21 +1,21 @@
 # Gate B — proposed live validation
 
-Status: **not approved or run**. Task 7 uses mocked HTTP requests. This proposal does not authorize provider execution.
+Status: **live validation deferred; development authorized to continue**. Task 7 uses mocked HTTP requests. After this proposal the user accepted proceeding, prioritized read-only version-ID checks over balance checks, and expressly directed continued development despite imperfect node apps. No live smoke submission has run. The matrix below remains the proposed qualification scope, not evidence of passing results.
 
 ## Scope requiring approval
 
-Keep Creador Santander v3 (`fbe97b3b-d810-4de4-859f-49aa2a7887ab`) for generation and Editor Santander v2 (`1276c054-ee4c-4ec4-8e2f-8c8b9901557b`) for upscaling, as requested. Editing remains unresolved: the requested Creador schema has no image input. The two editing checks below require approval to use Editor v2 for editing too.
+Keep Creador Santander v3 (`fbe97b3b-d810-4de4-859f-49aa2a7887ab`) for generation and Editor Santander v2 (`1276c054-ee4c-4ec4-8e2f-8c8b9901557b`) for editing and upscaling, as accepted after the missing Creador image input was explained.
 
 Proposed maximum: six submissions, sequentially, within a total US$10 ceiling. This replaces the plan's eight-run matrix because the selected schemas do not expose the Skechers three-image or Invierno one-image/four-text inputs. Those two contracts would remain untested.
 
 | Run | App / role | Inputs and acceptance evidence |
 | --- | --- | --- |
 | 1 | Creador / generation | `describe_la_escena`: `Fotografía de estudio de una taza roja sobre una mesa blanca, fondo gris claro, iluminación suave, sin texto.` Record returned job IDs, output count, hosts, bytes and dimensions. |
-| 2 | Editor / editing, pending role approval | Run 1 image in `foto_para_editar`; `quiero_editar`: `Cambia únicamente el color de la taza de rojo a azul. Conserva la composición.` Check data-URL transport and returned image. |
+| 2 | Editor / editing | Run 1 image in `foto_para_editar`; `quiero_editar`: `Cambia únicamente el color de la taza de rojo a azul. Conserva la composición.` Check data-URL transport and returned image. |
 | 3 | Editor / landscape upscale | Synthetic 800×600 test image in `foto_para_editar`; `quiero_editar`: `Amplía esta imagen a 3840 × 2880 píxeles. Conserva exactamente la composición y el contenido.` Measure actual output against the 4K rule. |
 | 4 | Editor / portrait upscale | Synthetic 600×800 test image; instruction requests 2880×3840 pixels with composition and content preserved. |
 | 5 | Editor / square upscale | Synthetic 800×800 test image; instruction requests 3840×3840 pixels with composition and content preserved. |
-| 6 | Editor / editing, pending role approval | A successful upscale from runs 3–5, if available; instruction requests a small color change while retaining dimensions. Skip if no valid upscale is available. |
+| 6 | Editor / editing | A successful upscale from runs 3–5, if available; instruction requests a small color change while retaining dimensions. Skip if no valid upscale is available. |
 
 Synthetic inputs will contain simple color blocks and fine lines so dimension and preservation checks are inspectable. These are transport and sizing checks, not evidence of studio art-direction quality. Asking for dimensions in a prompt does not establish that the app supports them; a mismatch is a gate finding, not a passing upscale.
 
@@ -29,9 +29,8 @@ Synthetic inputs will contain simple color blocks and fine lines so dimension an
 
 Krea documents separate API USD billing and says there is no public balance endpoint; balance monitoring must use its in-app API dashboard. See [API keys and billing](https://www.krea.ai/docs/developers/api-keys-and-billing). If that dashboard is unavailable in this session, live execution waits for a workable balance check.
 
-## Outstanding decisions
+## Current qualification status
 
-1. Whether Editor Santander v2 may also serve the editing role.
-2. Approval of this adjusted run matrix and the US$10 maximum before any provider execution.
+Editor v2 is selected for both editing and upscaling. Both selected version IDs were rechecked successfully with read-only requests. The user has removed imperfect candidate apps as a blocker to product implementation. No paid runs, measured live outputs or real submit/job fixtures are available yet.
 
 No engine live-contract acceptance is claimed until the approved runs produce sanitized fixtures and passing replay tests.
