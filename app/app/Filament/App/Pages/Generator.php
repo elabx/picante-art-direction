@@ -5,6 +5,7 @@ namespace App\Filament\App\Pages;
 use App\Enums\FailureReason;
 use App\Enums\GenerationKind;
 use App\Enums\GenerationStatus;
+use App\Enums\PipelineKind;
 use App\Enums\UserRole;
 use App\Filament\Forms\Components\PrivateFileUpload;
 use App\Models\Brand;
@@ -117,7 +118,7 @@ class Generator extends Page
 
         return $schema->components([
             Select::make('pipelineId')->label('Generador')->options($generators->pluck('label', 'id'))
-                ->live()->visible($generators->count() > 1),
+                ->live()->visible($generators->count() > 1 || ($pipeline === null && $generators->isNotEmpty())),
             Hidden::make('formRevision')->dehydrated(false),
             ...($pipeline === null ? [
                 TextEntry::make('noGenerator')->hiddenLabel()->state('Esta campaña no tiene generador configurado.'),
@@ -286,8 +287,12 @@ class Generator extends Page
     private function pipeline(): ?Pipeline
     {
         $campaign = $this->campaign();
+        if ($this->pipelineId === null) {
+            return null;
+        }
+        $pipeline = $campaign->pipelines()->where('kind', PipelineKind::Generator)->find($this->pipelineId) ?? abort(404);
 
-        return $this->pipelineId === null ? null : ($campaign->activeGenerators()->find($this->pipelineId) ?? abort(404));
+        return $pipeline->is_active ? $pipeline : null;
     }
 
     private function generation(int $id): Generation
