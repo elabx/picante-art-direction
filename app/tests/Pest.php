@@ -1,5 +1,7 @@
 <?php
 
+use App\Engines\FakeEngine;
+use Database\Factories\GenerationFactory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -42,7 +44,13 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+function fakeEngine(): FakeEngine
 {
-    // ..
+    return app()->instance(FakeEngine::class, new FakeEngine);
+}
+
+/** @param array<string, mixed> $overrides */
+function snapshot(array $overrides = []): array
+{
+    return GenerationFactory::snapshot($overrides);
 }
