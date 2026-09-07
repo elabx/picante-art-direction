@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'fake_engine' => (bool) env('FAKE_ENGINE', false),
     'url_provider' => env('MEDIA_URL_PROVIDER', 'presigned'),
     'signed_url_ttl' => (int) env('MEDIA_SIGNED_URL_TTL', 600),
     'max_upload_kb' => 20480,

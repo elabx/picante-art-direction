@@ -4,10 +4,13 @@ use App\Engines\FakeEngine;
 use App\Enums\FieldRole;
 use App\Enums\InputType;
 use App\Enums\PipelineKind;
+use App\Models\Brand;
 use App\Models\Campaign;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
+use App\Models\User;
 use Database\Factories\GenerationFactory;
+use Filament\Facades\Filament;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -79,4 +82,17 @@ function readyGenerator(Campaign $campaign): Pipeline
     ]);
 
     return $pipeline->refresh();
+}
+
+/** @return array{User, Brand, Campaign} */
+function editorInCampaign(): array
+{
+    $editor = User::factory()->editor()->create();
+    $brand = Brand::factory()->create();
+    $brand->users()->attach($editor);
+    $campaign = Campaign::factory()->for($brand)->create();
+    \Pest\Laravel\actingAs($editor);
+    Filament::setTenant($brand);
+
+    return [$editor, $brand, $campaign];
 }
