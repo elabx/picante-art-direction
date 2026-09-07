@@ -42,4 +42,18 @@ class UserFactory extends Factory
             'email_verified_at' => null,
         ]);
     }
+
+    public function editor(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'role' => 'editor',
+        ]);
+    }
+
+    public function artDirector(): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'role' => 'art_director',
+        ]);
+    }
 }
