@@ -13,3 +13,6 @@ app/public/build/
 app/public/hot
 app/storage/*.key
 app/auth.json
+
+# Composer credentials copied into the ddev web container home; never commit
+.ddev/homeadditions/.composer/auth.json
