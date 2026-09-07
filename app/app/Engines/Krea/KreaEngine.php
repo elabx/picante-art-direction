@@ -30,7 +30,7 @@ final class KreaEngine implements ImageEngine
     {
         try {
             $response = $this->http(15)
-                ->retry(2, 100, $this->shouldRetryDescribe(...), throw: false)
+                ->retry(2, 500, $this->shouldRetryDescribe(...), throw: false)
                 ->get("/node-apps/{$providerRef}");
         } catch (ConnectionException) {
             throw new KreaException(KreaErrorMessages::network(), null);
