@@ -32,7 +32,7 @@
 
 ## Prerequisites from the user (blocking items, ask once, up front)
 
-1. Filament license credentials for `packages.filamentphp.com` (email + license key), entered by the user via `ddev composer config --auth …` — never pasted into chat or committed.
+1. Filament license credentials for `packages.filamentphp.com`: **done on this machine (2026-09-07)** as `.ddev/homeadditions/.composer/auth.json`, git-ignored and copied into the web container home on every `ddev start`; access verified (HTTP 200). On another machine, recreate that file with the same shape (`http-basic` → host → `username`/`password`). Never commit it.
 2. A **fresh** Krea API key (the prototype key must be rotated), provided through `.env` only. Needed from **Gate A (Task 6b)** onward, not at the end.
 3. The actual Krea node-app version IDs for the generator(s), editor, and upscaler.
 4. Approval of the **Gate B** smoke run (Task 7b, ceiling US$10) before engine work is marked done.
@@ -149,12 +149,10 @@ Expected: `ddev composer show livewire/livewire` reports `v4.x`; `ddev composer 
 ddev composer require laravel/boost --dev
 ddev artisan boost:install
 ddev composer config repositories.filament composer https://packages.filamentphp.com/composer
-# The USER runs the next line themselves (do not paste the key into chat). Inside the container the
-# credentials land in app/auth.json, which is git-ignored:
-#   ddev composer config --auth http-basic.packages.filamentphp.com "EMAIL" "LICENSE_KEY"
 ddev composer require filament/blueprint --dev
 ```
-Expected: `boost:install` generates `CLAUDE.md`/`AGENTS.md` guidelines in `app/`; `filament/blueprint` appears in `composer.json` `require-dev`. If auth fails, stop and ask the user to run the auth command.
+Credentials come from `.ddev/homeadditions/.composer/auth.json` (see Prerequisites); no `composer config --auth` step is needed.
+Expected: `boost:install` generates `CLAUDE.md`/`AGENTS.md` guidelines in `app/`; `filament/blueprint` appears in `composer.json` `require-dev`. If Composer returns 401/403 for `packages.filamentphp.com`, stop and ask the user to check that file; do not paste keys into chat.
 
 - [ ] **Step 5: Ignore generated files at repo root**
 
