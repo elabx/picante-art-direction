@@ -88,6 +88,19 @@ it('only allows editors to access their own upload unless it is a fixed pipeline
     $this->actingAs($editor)->get(route('media.upload', $colleagueUpload))->assertForbidden();
 });
 
+it('forbids a cross-brand pipeline link from exposing a colleague upload', function (): void {
+    $editor = User::factory()->editor()->create();
+    $colleague = User::factory()->editor()->create();
+    $uploadBrand = Brand::factory()->create();
+    $pipelineBrand = Brand::factory()->create();
+    $pipelineBrand->users()->attach($editor);
+    $upload = InputUpload::factory()->for($uploadBrand)->for($colleague)->create(['storage_path' => 'inputs/cross-brand.png']);
+    $pipeline = Pipeline::factory()->create(['campaign_id' => Campaign::factory()->for($pipelineBrand)->create()->id]);
+    $pipeline->inputUploads()->attach($upload);
+
+    $this->actingAs($editor)->get(route('media.upload', $upload))->assertForbidden();
+});
+
 it('uses the requested attachment disposition and the exact ten-minute expiry for downloads', function (): void {
     $editor = User::factory()->editor()->create();
     $brand = Brand::factory()->create();

@@ -87,7 +87,9 @@ class MediaController
     {
         return Pipeline::query()
             ->whereHas('inputUploads', fn ($query) => $query->whereKey($upload->id))
-            ->when($user, fn ($query) => $query->whereHas('campaign.brand.users', fn ($query) => $query->whereKey($user->id)))
+            ->whereHas('campaign', fn ($query) => $query
+                ->where('brand_id', $upload->brand_id)
+                ->when($user, fn ($query) => $query->whereHas('brand.users', fn ($query) => $query->whereKey($user->id))))
             ->exists();
     }
 
