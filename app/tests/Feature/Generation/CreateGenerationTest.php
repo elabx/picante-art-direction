@@ -16,6 +16,8 @@ use App\Models\PipelineField;
 use App\Models\User;
 use App\Services\Generation\CreateGeneration;
 use Illuminate\Auth\Access\AuthorizationException;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -87,6 +89,47 @@ it('replays an authorized series request after its pipeline configuration change
 
     expect($replayed->id)->toBe($original->id)
         ->and($replayed->execution_snapshot['config_revision'])->toBe(3);
+});
+
+it('rechecks a matching request id inside the transaction before validating changed pipeline configuration', function (): void {
+    Queue::fake();
+    $brand = Brand::factory()->create();
+    $user = User::factory()->editor()->create();
+    $brand->users()->attach($user);
+    $campaign = Campaign::factory()->for($brand)->create();
+    $pipeline = readyGenerator($campaign);
+    $requestId = (string) Str::uuid();
+    $injected = false;
+    $original = null;
+
+    DB::listen(function (QueryExecuted $query) use (&$injected, &$original, $requestId, $campaign, $pipeline, $user): void {
+        if ($injected || $query->bindings !== [$requestId]) {
+            return;
+        }
+
+        $injected = true;
+        $original = new Generation;
+        $original->forceFill([
+            'campaign_id' => $campaign->id,
+            'pipeline_id' => $pipeline->id,
+            'user_id' => $user->id,
+            'kind' => 'series',
+            'request_id' => $requestId,
+            'execution_snapshot' => snapshot(),
+            'status' => GenerationStatus::Pending,
+            'retryable' => false,
+        ])->save();
+        DB::table('pipelines')->where('id', $pipeline->id)->update([
+            'is_active' => false,
+            'config_revision' => 4,
+        ]);
+    });
+
+    $replayed = app(CreateGeneration::class)->series($user, $campaign, $pipeline, ['describe_la_escena' => 'x'], $requestId, 3);
+
+    expect($injected)->toBeTrue()
+        ->and($original)->toBeInstanceOf(Generation::class)
+        ->and($replayed->id)->toBe($original->id);
 });
 
 it('attaches every authorized upload reference to the generation', function (): void {

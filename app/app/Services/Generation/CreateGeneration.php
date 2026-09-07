@@ -132,6 +132,17 @@ final class CreateGeneration
                 $persistedPipeline = Pipeline::query()->lockForUpdate()->find($pipeline->id);
 
                 $this->authorize($user, $persistedCampaign);
+                $persistedSource = $this->sourceForCampaign($source, $persistedCampaign, $kind);
+                $existing = Generation::query()->where('request_id', $requestId)->first();
+
+                if ($existing !== null) {
+                    if ($kind === GenerationKind::Series) {
+                        return $this->existingForSeriesContext($existing, $user, $persistedCampaign, $pipeline->id);
+                    }
+
+                    return $this->existingForSourceContext($existing, $user, $persistedCampaign, $kind, $persistedSource);
+                }
+
                 $this->ensureCampaignAvailable($persistedCampaign);
                 $this->ensurePipeline($persistedCampaign, $persistedPipeline, $kind);
 
@@ -139,7 +150,6 @@ final class CreateGeneration
                     $this->invalid('La configuración cambió. Recarga el formulario.');
                 }
 
-                $persistedSource = $this->sourceForCampaign($source, $persistedCampaign, $kind);
                 $composed = $this->composer->compose(
                     $persistedPipeline,
                     $visibleInputs,
