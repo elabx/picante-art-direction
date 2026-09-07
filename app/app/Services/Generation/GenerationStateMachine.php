@@ -56,6 +56,100 @@ final class GenerationStateMachine
         $this->locked($generation->id, fn (Generation $fresh) => $this->settleLocked($fresh));
     }
 
+    public function reconcileStaleSubmission(int $generationId, DateTimeInterface $cutoff): bool
+    {
+        return $this->locked($generationId, function (Generation $generation) use ($cutoff): bool {
+            if ($generation->status !== GenerationStatus::Submitting
+                || $generation->submission_started_at === null
+                || ! $generation->submission_started_at->lessThan($cutoff)) {
+                return false;
+            }
+
+            $this->failed($generation, FailureReason::SubmissionUnknown, 'No pudimos confirmar si el trabajo se inició.', true);
+
+            return true;
+        }) ?? false;
+    }
+
+    public function redispatchStalePending(int $generationId, DateTimeInterface $cutoff): bool
+    {
+        return $this->locked($generationId, function (Generation $generation) use ($cutoff): bool {
+            if ($generation->status !== GenerationStatus::Pending || ! $generation->created_at->lessThan($cutoff)) {
+                return false;
+            }
+
+            DB::afterCommit(fn () => RunGenerationJob::dispatch($generation->id));
+
+            return true;
+        }) ?? false;
+    }
+
+    public function redispatchStalePoll(int $generationJobId, DateTimeInterface $cutoff): bool
+    {
+        $job = GenerationJob::query()->find($generationJobId);
+        if ($job === null) {
+            return false;
+        }
+
+        return $this->locked($job->generation_id, function (Generation $generation) use ($generationJobId, $cutoff): bool {
+            $job = $generation->jobs()->lockForUpdate()->find($generationJobId);
+            $withinAutomaticWindow = $generation->submitted_at !== null
+                && $generation->submitted_at->greaterThan(now()->subSeconds(600));
+            $overdue = $job?->next_poll_at !== null && $job->next_poll_at->lessThan($cutoff);
+            $missing = $job?->next_poll_at === null
+                && in_array($generation->status, [GenerationStatus::Submitted, GenerationStatus::Processing], true)
+                && $generation->submitted_at !== null
+                && $generation->submitted_at->lessThan($cutoff);
+            if ($generation->status->isTerminal() || $job === null || $job->isTerminal() || ! $withinAutomaticWindow || ! ($overdue || $missing)) {
+                return false;
+            }
+
+            DB::afterCommit(fn () => PollGenerationJob::dispatch($job->id, $generation->submitted_at));
+
+            return true;
+        }) ?? false;
+    }
+
+    public function reconcileStaleOutput(int $outputId, DateTimeInterface $pendingCutoff, DateTimeInterface $downloadingCutoff): ?OutputStatus
+    {
+        $output = GenerationOutput::query()->find($outputId);
+        if ($output === null) {
+            return null;
+        }
+
+        return $this->locked($output->generation_id, function (Generation $generation) use ($outputId, $pendingCutoff, $downloadingCutoff): ?OutputStatus {
+            $output = $generation->outputs()->lockForUpdate()->find($outputId);
+            $pending = $output?->status === OutputStatus::Pending
+                && $output->next_attempt_at !== null
+                && $output->next_attempt_at->lessThan($pendingCutoff);
+            $downloading = $output?->status === OutputStatus::Downloading
+                && $output->updated_at->lessThan($downloadingCutoff);
+            if ($generation->status->isTerminal() || $output === null || ! ($pending || $downloading)) {
+                return null;
+            }
+
+            if ($output->attempts >= 3) {
+                $output->forceFill([
+                    'status' => OutputStatus::Failed,
+                    'failure_reason' => FailureReason::DownloadFailed,
+                    'error_message' => 'No se pudo descargar el resultado.',
+                    'next_attempt_at' => null,
+                ])->save();
+                $this->settleLocked($generation);
+
+                return OutputStatus::Failed;
+            }
+
+            $output->forceFill([
+                'status' => OutputStatus::Pending,
+                'next_attempt_at' => null,
+            ])->save();
+            DB::afterCommit(fn () => DownloadOutputJob::dispatch($output->id));
+
+            return OutputStatus::Pending;
+        });
+    }
+
     private function settleLocked(Generation $generation): void
     {
         $jobs = $generation->jobs()->orderBy('id')->lockForUpdate()->get();
