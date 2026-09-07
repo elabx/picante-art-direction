@@ -3,3 +3,13 @@
 
 # Design prototypes stay local (contain credentials); not part of the repo for now
 prototypes/
+
+# Laravel app artifacts (app/ is created in Task 1)
+app/vendor/
+app/node_modules/
+app/.env
+app/.env.*.local
+app/public/build/
+app/public/hot
+app/storage/*.key
+app/auth.json

@@ -1,0 +1,21 @@
+# Muse Media Ops project additions, merged into config.yaml by ddev.
+# Owned by the repo (not #ddev-generated). See docs/superpowers/plans/2026-09-05-muse-media-ops-slice-1.md, Task 0.
+
+# Queue worker and scheduler run under supervisord inside the web container.
+# They wait until the Laravel app exists so a fresh clone can `ddev start` before Task 1.
+web_extra_daemons:
+  - name: "queue-worker"
+    command: "bash -c 'until [ -f /var/www/html/app/artisan ] && [ -f /var/www/html/app/vendor/autoload.php ]; do sleep 5; done; cd /var/www/html/app && php artisan queue:work --tries=1 --timeout=150 --sleep=2'"
+    directory: /var/www/html
+  - name: "scheduler"
+    command: "bash -c 'until [ -f /var/www/html/app/artisan ] && [ -f /var/www/html/app/vendor/autoload.php ]; do sleep 5; done; cd /var/www/html/app && php artisan schedule:work'"
+    directory: /var/www/html
+
+hooks:
+  post-start:
+    # Test database for Pest (RefreshDatabase). The dev database `db` is created by ddev.
+    - exec: "mysql -h db -u root -proot -e 'CREATE DATABASE IF NOT EXISTS muse_test CHARACTER SET utf8mb4;'"
+    # Private bucket holding the inputs/ and pieces/ prefixes, plus a 1-day expiry on temporary uploads.
+    - exec-host: "ddev mc alias set local http://localhost:10101 ddevminio ddevminio"
+    - exec-host: "ddev mc mb --ignore-existing local/muse-media"
+    - exec-host: "ddev mc ilm rule add --expire-days 1 --prefix 'inputs/tmp/' local/muse-media || true"

@@ -6,13 +6,14 @@
 
 **Architecture:** Two Filament panels (`/admin` for Art Directors, `/app` for Editors with Brand tenancy) over a small domain layer: `PipelineSchemaSync` turns a Krea node-app schema into configurable fields, `PipelineFormBuilder` renders them, and a queued `GenerationRunner` chain (create → submit → poll → download) talks to Krea through an `ImageEngine` interface with a single `KreaEngine` implementation. All images live in object storage (MinIO in dev, S3 + CloudFront in production).
 
-**Tech Stack:** PHP 8.2, Laravel 12, Filament 5, Livewire 4, Tailwind 4.1+, MySQL, Laravel queues (database driver in dev), Pest 3, AWS SDK for PHP (S3 + CloudFront `UrlSigner`), MinIO via Docker Compose, Laravel Boost + Filament Blueprint (dev).
+**Tech Stack:** PHP **8.5** (pinned by ddev), Laravel 12, Filament 5, Livewire 4, Tailwind 4.1+, MySQL 8.0, Redis queues, Pest 3, AWS SDK for PHP (S3 + CloudFront `UrlSigner`), **ddev** as the only local environment (web, MySQL, MinIO and Redis add-ons, supervised queue worker and scheduler), Laravel Boost + Filament Blueprint (dev).
 
 **Spec:** `docs/superpowers/specs/2026-09-04-muse-media-ops-slice-1-design.md` — read it first; the plan argues from it. Review with disposition table: `docs/superpowers/specs/2026-09-04-muse-media-ops-slice-1-review.md`. Codex plan review and how each finding was applied: `docs/superpowers/plans/2026-09-05-codex-plan-review.md` and the **Revision log** at the end of this plan.
 
 ## Global Constraints
 
-- Filament 5 requires **Livewire 4** and **Tailwind CSS 4.1+**; PHP **8.2+**; Laravel **12**. Lock a compatible set at scaffold time and commit `composer.lock`.
+- Filament 5 requires **Livewire 4** and **Tailwind CSS 4.1+**; Laravel **12**. PHP is **8.5**, fixed by `.ddev/config.yaml`; never install or run PHP, Composer, Node, or MySQL from the host. Lock a compatible set at scaffold time and commit `composer.lock`. If a dependency refuses PHP 8.5, stop and report; the fallback is `ddev config --php-version=8.4`, and only the user decides that.
+- **All commands run through ddev from the repo root:** `ddev composer …` and `ddev artisan …` already execute inside `app/` (`composer_root: app`); tests run with `ddev pest …`, code style with `ddev pint …`, Node with `ddev npm …`, SQL with `ddev mysql`, raw shell with `ddev exec -d /var/www/html/app …`. The app URL is `https://muse.ddev.site`, MinIO console `https://muse.ddev.site:9090`.
 - **All UI text is Spanish.** Copy strings are given verbatim in tasks; do not translate or paraphrase them.
 - **Standard Filament layouts only.** No custom theme in this slice (Modernist theme is slice 2).
 - **Object storage everywhere.** No image bytes are written to the web server's local disk, including Livewire temporary uploads. Dev uses MinIO; tests use `Storage::fake()`.
@@ -21,17 +22,17 @@
 - **Provider-neutral names** in the schema: `engine`, `provider_ref`, `provider_job_id`, `source_url`.
 - Signed URLs expire after **10 minutes**; issue them only after authorizing the owning record.
 - Upload limit **20 MiB per image** (`max:20480`); aggregate request limit `media.max_request_bytes` (default 96 MiB).
-- **Queue budgets:** `retry_after = 420` s on the database and redis queue connections; job timeouts `RunGenerationJob 90`, `PollGenerationJob 60`, `DownloadOutputJob 120`; the worker runs with `--timeout=150 --tries=1`. Worker timeout must stay below `retry_after`.
+- **Queue budgets:** `retry_after = 420` s on the redis (and database) queue connections; job timeouts `RunGenerationJob 90`, `PollGenerationJob 60`, `DownloadOutputJob 120`; the worker runs with `--timeout=150 --tries=1` as a ddev `web_extra_daemon` (restart it with `ddev exec supervisorctl restart 'webextradaemons:*'` after changing job code). Worker timeout must stay below `retry_after`.
 - **Every test boots Laravel.** `tests/Pest.php` applies `Tests\TestCase` and `RefreshDatabase` to both `Feature` and `Unit` directories.
 - **Logs never contain** keys, data URLs, full input bodies, or signed URLs. Provider error details go through `KreaErrorMessages::sanitizeDetail()` (redact, then truncate to 2 KiB) before storage or logging.
 - 4K rule: `s = 3840 / max(W, H)`, accepted size `round(W·s) × round(H·s)`; `is_4k` only for kind `upscale` pieces that pass.
 - Commit after every task with a conventional-commit message ending in the attribution trailer used in this repo.
-- **Working directory for all commands below is `app/`** (the Laravel app inside this repository) unless stated otherwise.
+- **The Laravel app lives in `app/`**; paths in tasks are relative to it, but commands are typed at the repo root through ddev as described above.
 - Filament API signatures in this plan follow the Filament 5 docs (`Filament\Schemas\Schema`, `form(Schema $schema): Schema`, `table(Table $table): Table`). If the installed version differs, run Boost's `search-docs` for the installed docs and adapt the signature, keeping behavior identical.
 
 ## Prerequisites from the user (blocking items, ask once, up front)
 
-1. Filament license credentials for `packages.filamentphp.com` (email + license key), entered by the user via `composer config --auth …` — never pasted into chat or committed.
+1. Filament license credentials for `packages.filamentphp.com` (email + license key), entered by the user via `ddev composer config --auth …` — never pasted into chat or committed.
 2. A **fresh** Krea API key (the prototype key must be rotated), provided through `.env` only. Needed from **Gate A (Task 6b)** onward, not at the end.
 3. The actual Krea node-app version IDs for the generator(s), editor, and upscaler.
 4. Approval of the **Gate B** smoke run (Task 7b, ceiling US$10) before engine work is marked done.
@@ -41,6 +42,8 @@
 ## File structure
 
 ```
+.ddev/                                  ddev project (committed): PHP 8.5, MySQL 8.0, MinIO + Redis add-ons,
+│                                       queue-worker + scheduler daemons, post-start hooks, `ddev pest` / `ddev pint`
 app/                                    Laravel application (created in Task 1)
 ├── app/Enums/                          UserRole, PipelineKind, InputType, FieldRole, FieldVisibility,
 │                                       GenerationKind, GenerationStatus, FailureReason, PieceKind, OutputStatus
@@ -62,7 +65,6 @@ app/                                    Laravel application (created in Task 1)
 ├── config/media.php                    url_provider, ttl, limits, result hosts
 ├── database/migrations/                one migration per table, in dependency order
 ├── database/factories/                 one factory per model
-├── docker-compose.yml                  MinIO
 ├── tests/Unit/                         pure services
 ├── tests/Feature/                      chain, authorization, resources
 └── tests/Fixtures/krea/                sanitized real responses (Task 24)
@@ -72,35 +74,27 @@ app/                                    Laravel application (created in Task 1)
 
 ## Phase 0 — Tooling and scaffold
 
-### Task 0: Codex setup and tooling check
+### Task 0: Codex setup and ddev environment check
 
-**Files:** none in repo.
+**Files:** `.ddev/` already exists in the repo (created 2026-09-07): ddev's generated `config.yaml` plus our `config.muse.yaml` (daemons, post-start hooks), add-ons `minio` and `redis`, and `commands/web/{pest,pint}`. Nothing else.
 
 - [ ] **Step 1: Run the Codex setup skill** (user instruction): invoke `/codex:setup` and confirm the local Codex CLI is ready.
-- [ ] **Step 2: Check tool versions**
+- [ ] **Step 2: Start the environment**
 
-Run (from repo root):
+Run (repo root):
 ```bash
-php -v | head -1; composer --version; node -v; docker info --format '{{.ServerVersion}}'; mysql --version
+ddev start -y && ddev describe
 ```
-Expected: PHP 8.2.x, Node 22.x, Docker daemon version printed (not an error), MySQL client present. Composer will print 2.1.5.
+Expected: project `muse` running; services `web` (PHP 8.5, nginx), `db` (mysql 8.0), `minio`, `redis`; URLs `https://muse.ddev.site` and the MinIO console on `:9090`. The queue-worker and scheduler daemons show as running in `ddev exec supervisorctl status` but are idle until the app exists.
 
-- [ ] **Step 3: Upgrade Composer to 2.8+ without overwriting the system binary if not permitted**
+- [ ] **Step 3: Verify the toolchain inside the container**
 
-Run:
 ```bash
-composer self-update --2 || { mkdir -p "$HOME/bin" && php -r "copy('https://getcomposer.org/installer','/tmp/cs.php');" && php /tmp/cs.php --install-dir="$HOME/bin" --filename=composer && echo 'export PATH="$HOME/bin:$PATH"' >> ~/.zshrc && export PATH="$HOME/bin:$PATH"; }
-composer --version
+ddev exec php -v | head -1; ddev exec composer --version; ddev exec node -v
+ddev mysql -e "SHOW DATABASES LIKE 'muse%';"
+ddev mc ls local/
 ```
-Expected: `Composer version 2.8.x` or newer.
-
-- [ ] **Step 4: Verify MySQL is reachable and create dev/test databases**
-
-Run:
-```bash
-mysql -uroot -e "CREATE DATABASE IF NOT EXISTS muse CHARACTER SET utf8mb4; CREATE DATABASE IF NOT EXISTS muse_test CHARACTER SET utf8mb4; SHOW DATABASES LIKE 'muse%';"
-```
-Expected: two rows, `muse` and `muse_test`. If root needs a password, ask the user for the local MySQL credentials.
+Expected: `PHP 8.5.x`, Composer 2.8+, Node 24.x; databases `db` and `muse_test`; bucket `muse-media/`. If `muse_test` or the bucket is missing, run `ddev restart` (the post-start hooks create them) and re-check.
 
 ### Task 1: Laravel 12 scaffold with Pest, Filament 5, two panels, Boost, Blueprint
 
@@ -108,65 +102,63 @@ Expected: two rows, `muse` and `muse_test`. If root needs a password, ask the us
 - Create: `app/` (Laravel project), `app/.env`, `app/phpunit.xml` (edit), `app/app/Providers/Filament/AdminPanelProvider.php`, `app/app/Providers/Filament/AppPanelProvider.php`
 - Repo root: `.gitignore` (add `app/vendor/`, `app/node_modules/`, `app/.env`, `app/storage/*.key`, `app/public/build/`)
 
-- [ ] **Step 1: Create the Laravel app** (repo root)
+- [ ] **Step 1: Create the Laravel app inside the container** (repo root). ddev pre-created an empty `app/public`; remove it so Composer gets an empty target:
 
 ```bash
-composer create-project laravel/laravel:^12.0 app
-cd app
-composer require pestphp/pest pestphp/pest-plugin-laravel --dev --with-all-dependencies
-php artisan pest:install
+ddev exec bash -c 'cd /var/www/html && rm -rf app && composer create-project laravel/laravel:^12.0 app'
+ddev restart
+ddev composer require pestphp/pest pestphp/pest-plugin-laravel --dev --with-all-dependencies
+ddev artisan pest:install
 ```
-Expected: `tests/Pest.php` exists; `./vendor/bin/pest` runs the two example tests green. Then edit `tests/Pest.php` so every test boots the app:
+Expected: `app/tests/Pest.php` exists; `ddev pest` runs the two example tests green. If Composer reports a package incompatible with PHP 8.5, stop and report it (see Global Constraints). Then edit `tests/Pest.php` so every test boots the app:
 ```php
 uses(Tests\TestCase::class, Illuminate\Foundation\Testing\RefreshDatabase::class)->in('Feature', 'Unit');
 ```
 
 - [ ] **Step 2: Point the app and tests at MySQL**
 
-Edit `.env`:
+ddev's Laravel project type already writes `DB_*` (`DB_HOST=db`, database `db`, user/password `db`) and `APP_URL=https://muse.ddev.site` into `app/.env`. Edit `app/.env` to add:
 ```
 APP_NAME="Media Ops"
 APP_LOCALE=es
 APP_FALLBACK_LOCALE=es
-DB_CONNECTION=mysql
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_DATABASE=muse
-DB_USERNAME=root
-DB_PASSWORD=
-QUEUE_CONNECTION=database
+QUEUE_CONNECTION=redis
+REDIS_HOST=redis
+REDIS_PORT=6379
+CACHE_STORE=redis
 FILESYSTEM_DISK=inputs
 ```
-Edit `phpunit.xml` `<php>` block: set `DB_CONNECTION=mysql`, `DB_DATABASE=muse_test`, `QUEUE_CONNECTION=sync`, `FILESYSTEM_DISK=inputs`, `MEDIA_URL_PROVIDER=presigned`. Remove the sqlite lines.
+Edit `app/phpunit.xml` `<php>` block: set `DB_CONNECTION=mysql`, `DB_HOST=db`, `DB_DATABASE=muse_test`, `DB_USERNAME=root`, `DB_PASSWORD=root`, `QUEUE_CONNECTION=sync`, `CACHE_STORE=array`, `FILESYSTEM_DISK=inputs`, `MEDIA_URL_PROVIDER=presigned`. Remove the sqlite lines.
 
-Run: `php artisan migrate && ./vendor/bin/pest`
-Expected: default migrations applied to `muse`; tests green against `muse_test` (RefreshDatabase).
+Run: `ddev artisan migrate && ddev pest`
+Expected: default migrations applied to `db`; tests green against `muse_test` (RefreshDatabase).
 
 - [ ] **Step 3: Install Filament 5 and create both panels**
 
 ```bash
-composer require filament/filament:"^5.0" -W
-php artisan filament:install --panels        # creates AdminPanelProvider with id 'admin', path 'admin'
-php artisan make:filament-panel app          # creates AppPanelProvider with id 'app', path 'app'
-npm install && npm run build
+ddev composer require filament/filament:"^5.0" -W
+ddev artisan filament:install --panels        # creates AdminPanelProvider with id 'admin', path 'admin'
+ddev artisan make:filament-panel app          # creates AppPanelProvider with id 'app', path 'app'
+ddev npm install && ddev npm run build
 ```
-Expected: `composer show livewire/livewire` reports `v4.x`; `composer show filament/filament` reports `v5.x`. Both providers are registered in `bootstrap/providers.php`.
+Expected: `ddev composer show livewire/livewire` reports `v4.x`; `ddev composer show filament/filament` reports `v5.x`. Both providers are registered in `bootstrap/providers.php`. `ddev launch /admin` opens the login page over HTTPS.
 
 - [ ] **Step 4: Install Boost and Blueprint (dev)**
 
 ```bash
-composer require laravel/boost --dev
-php artisan boost:install
-composer config repositories.filament composer https://packages.filamentphp.com/composer
-# The USER runs the next line themselves (do not paste the key into chat):
-#   composer config --auth http-basic.packages.filamentphp.com "EMAIL" "LICENSE_KEY"
-composer require filament/blueprint --dev
+ddev composer require laravel/boost --dev
+ddev artisan boost:install
+ddev composer config repositories.filament composer https://packages.filamentphp.com/composer
+# The USER runs the next line themselves (do not paste the key into chat). Inside the container the
+# credentials land in app/auth.json, which is git-ignored:
+#   ddev composer config --auth http-basic.packages.filamentphp.com "EMAIL" "LICENSE_KEY"
+ddev composer require filament/blueprint --dev
 ```
 Expected: `boost:install` generates `CLAUDE.md`/`AGENTS.md` guidelines in `app/`; `filament/blueprint` appears in `composer.json` `require-dev`. If auth fails, stop and ask the user to run the auth command.
 
 - [ ] **Step 5: Ignore generated files at repo root**
 
-Append to repo-root `.gitignore`:
+Append to repo-root `.gitignore` (the `.ddev/` folder stays committed; ddev maintains its own `.ddev/.gitignore`):
 ```
 app/vendor/
 app/node_modules/
@@ -181,42 +173,21 @@ app/auth.json
 - [ ] **Step 6: Commit**
 
 ```bash
-cd .. && git add -A && git commit -m "chore: scaffold Laravel 12 app with Filament 5 panels, Pest, Boost and Blueprint"
+git add -A && git commit -m "chore: scaffold Laravel 12 app on PHP 8.5 with Filament 5 panels, Pest, Boost and Blueprint"
 ```
 
-### Task 2: MinIO, object-storage disks, media config
+### Task 2: Object-storage disks (MinIO add-on), Redis queue budgets, media config
 
 **Files:**
-- Create: `app/docker-compose.yml`, `app/config/media.php`
-- Modify: `app/config/filesystems.php`, `app/config/livewire.php` (publish first), `app/.env`, `app/.env.example`
+- Create: `app/config/media.php`, `app/app/Console/Commands/MediaEnsureBucket.php`
+- Modify: `app/config/filesystems.php`, `app/config/queue.php`, `app/config/livewire.php` (publish first), `app/.env`, `app/.env.example`
 
-- [ ] **Step 1: Compose file for MinIO**
+MinIO and Redis come from the ddev add-ons already in `.ddev/`; there is no Compose file in the app. Inside the web container MinIO answers at `http://minio:10101` with access key and secret `ddevminio`; the post-start hook creates the private bucket `muse-media` and a 1-day expiry rule on `inputs/tmp/`.
 
-`app/docker-compose.yml`:
-```yaml
-services:
-  minio:
-    image: minio/minio:latest
-    command: server /data --console-address ":9001"
-    ports: ["9000:9000", "9001:9001"]
-    environment:
-      MINIO_ROOT_USER: muse
-      MINIO_ROOT_PASSWORD: muse-secret
-    volumes: [minio-data:/data]
-  minio-init:
-    image: minio/mc:latest
-    depends_on: [minio]
-    entrypoint: >
-      /bin/sh -c "
-      until mc alias set local http://minio:9000 muse muse-secret; do sleep 1; done;
-      mc mb -p local/muse-media || true;
-      mc ilm rule add --expire-days 1 --prefix 'inputs/tmp/' local/muse-media || true;
-      exit 0"
-volumes:
-  minio-data: {}
-```
-Run: `docker compose up -d && docker compose logs minio-init | tail -2`
-Expected: bucket `muse-media` created; lifecycle rule on `inputs/tmp/` added.
+- [ ] **Step 1: Confirm the bucket and expiry rule exist**
+
+Run: `ddev mc ls local/ && ddev mc ilm rule ls local/muse-media`
+Expected: `muse-media/` listed; one rule with prefix `inputs/tmp/` expiring after 1 day. If missing, `ddev restart`.
 
 - [ ] **Step 2: Disks and env**
 
@@ -242,11 +213,11 @@ Add to `config/filesystems.php` `disks`:
 ```
 `.env` additions (and `.env.example` with empty values):
 ```
-AWS_ACCESS_KEY_ID=muse
-AWS_SECRET_ACCESS_KEY=muse-secret
+AWS_ACCESS_KEY_ID=ddevminio
+AWS_SECRET_ACCESS_KEY=ddevminio
 AWS_DEFAULT_REGION=us-east-1
 AWS_BUCKET=muse-media
-AWS_ENDPOINT=http://127.0.0.1:9000
+AWS_ENDPOINT=http://minio:10101
 AWS_USE_PATH_STYLE_ENDPOINT=true
 MEDIA_URL_PROVIDER=presigned
 MEDIA_SIGNED_URL_TTL=600
@@ -256,12 +227,12 @@ CLOUDFRONT_PRIVATE_KEY_PATH=
 KREA_API_KEY=
 KREA_BASE_URL=https://api.krea.ai
 ```
-Run: `composer require league/flysystem-aws-s3-v3 "^3.0" -W`
+Run: `ddev composer require league/flysystem-aws-s3-v3 "^3.0" -W`
 
 - [ ] **Step 3: Livewire temporary uploads on S3**
 
 ```bash
-php artisan livewire:publish --config
+ddev artisan livewire:publish --config
 ```
 Edit `config/livewire.php`:
 ```php
@@ -276,7 +247,7 @@ Edit `config/livewire.php`:
 ],
 ```
 
-- [ ] **Step 3b: Queue budgets** — in `config/queue.php` set `'retry_after' => 420` on both the `database` and `redis` connections (Global Constraints).
+- [ ] **Step 3b: Queue budgets** — in `config/queue.php` set `'retry_after' => 420` on both the `redis` and `database` connections (Global Constraints). Dev and production both use the `redis` connection; `database` stays as a fallback.
 
 - [ ] **Step 4: `config/media.php`**
 
@@ -302,12 +273,12 @@ return [
 ];
 ```
 
-- [ ] **Step 5: Smoke test the disk against MinIO**
+- [ ] **Step 5: `media:ensure-bucket` and smoke test** — add an artisan command that creates `config('filesystems.disks.inputs.bucket')` through the AWS SDK if it does not exist (used by CI and fresh environments; idempotent). Then:
 
-Run: `php artisan tinker --execute="Storage::disk('inputs')->put('tmp/ping.txt','ok'); echo Storage::disk('inputs')->get('tmp/ping.txt');"`
-Expected: prints `ok`.
+Run: `ddev artisan media:ensure-bucket && ddev artisan tinker --execute="Storage::disk('inputs')->put('tmp/ping.txt','ok'); echo Storage::disk('inputs')->get('tmp/ping.txt');"`
+Expected: prints `ok`, and `ddev mc ls local/muse-media/inputs/tmp/` shows `ping.txt`.
 
-- [ ] **Step 6: Commit** — `git commit -m "chore: MinIO compose, S3 disks, Livewire S3 temp uploads, media config"`
+- [ ] **Step 6: Commit** — `git commit -m "chore: S3 disks on the ddev MinIO add-on, Livewire S3 temp uploads, redis queue budgets, media config"`
 
 ---
 
@@ -336,7 +307,7 @@ it('marks only completed and failed as terminal', function () {
         ->and(GenerationStatus::Downloading->isTerminal())->toBeFalse();
 });
 ```
-Run: `./vendor/bin/pest tests/Unit/Enums` → FAIL (class not found).
+Run: `ddev pest tests/Unit/Enums` → FAIL (class not found).
 
 - [ ] **Step 2: Implement** `app/Enums/GenerationStatus.php`:
 ```php
@@ -368,7 +339,7 @@ enum GenerationStatus: string
 ```
 Create the other nine enums with the exact cases and values listed in Interfaces above (plain backed enums, no methods).
 
-- [ ] **Step 3: Run** `./vendor/bin/pest tests/Unit/Enums` → PASS.
+- [ ] **Step 3: Run** `ddev pest tests/Unit/Enums` → PASS.
 - [ ] **Step 4: Commit** — `git commit -m "feat: domain enums"`
 
 ### Task 4: Migrations and models — brands, users, campaigns, pipelines, pipeline_fields
@@ -417,7 +388,7 @@ it('links editors to brands and exposes active pipelines by kind', function () {
 ```
 Run → FAIL.
 
-- [ ] **Step 2: Migrations** (`php artisan make:migration …` then fill):
+- [ ] **Step 2: Migrations** (`ddev artisan make:migration …` then fill):
 
 ```php
 // create_brands_table
@@ -530,7 +501,7 @@ class Pipeline extends Model
 
 - [ ] **Step 4: Factories** — `BrandFactory` (`name` company, `slug` from name), `UserFactory` add state `editor()` (`role => 'editor'`) and `artDirector()`, `CampaignFactory` (`brand_id` factory, `name`, `slug`), `PipelineFactory` (`campaign_id` factory, `kind => 'generator'`, `provider_ref => fake()->uuid()`, `label`, `is_active => false`), `PipelineFieldFactory` (`name`, `source_schema => ['type' => 'string']`, `input_type => 'string'`).
 
-- [ ] **Step 5: Run** `php artisan migrate:fresh && ./vendor/bin/pest tests/Feature/Models` → PASS.
+- [ ] **Step 5: Run** `ddev artisan migrate:fresh && ddev pest tests/Feature/Models` → PASS.
 - [ ] **Step 6: Commit** — `git commit -m "feat: brands, campaigns, pipelines, pipeline fields models and migrations"`
 
 ### Task 5: Migrations and models — input_uploads, generations, generation_jobs, generation_outputs, pieces
@@ -640,7 +611,7 @@ public function versionChain(): \Illuminate\Support\Collection
 
 - [ ] **Step 4: Factories** — `GenerationFactory` (`campaign_id`, `pipeline_id` from campaign via `afterMaking` or explicit, `user_id`, `kind => 'series'`, `request_id => Str::uuid()`, `execution_snapshot => []`, `status => 'pending'`); `GenerationJobFactory`, `GenerationOutputFactory` (`index` sequence, `source_url => 'https://cdn.example/img.png'`), `PieceFactory` (creates a `GenerationOutput` for `generation_output_id`, `storage_path`, `source_url`, `width 1024`, `height 1024`, `bytes 1000`, `mime_type image/png`, `index 0`, `kind original`), `InputUploadFactory`.
 
-- [ ] **Step 5: Run** `php artisan migrate:fresh && ./vendor/bin/pest tests/Feature/Models` → PASS.
+- [ ] **Step 5: Run** `ddev artisan migrate:fresh && ddev pest tests/Feature/Models` → PASS.
 - [ ] **Step 6: Commit** — `git commit -m "feat: uploads, generations, jobs, outputs, pieces models and migrations"`
 
 ---
@@ -765,7 +736,7 @@ Preconditions: the fresh Krea key is in `.env` (`KREA_API_KEY`) and the user has
 - [ ] **Step 1: Fetch each schema with a throwaway HTTP call** (no app code yet):
 ```bash
 for id in GENERATOR_ID EDITOR_ID UPSCALER_ID; do
-  curl -sS -H "Authorization: Bearer $(grep ^KREA_API_KEY .env | cut -d= -f2)" "https://api.krea.ai/node-apps/$id" | python3 -m json.tool > "tests/Fixtures/krea/schema-$id.json"
+  ddev exec -d /var/www/html/app bash -c "curl -sS -H \"Authorization: Bearer \$(grep ^KREA_API_KEY .env | cut -d= -f2)\" https://api.krea.ai/node-apps/$id | python3 -m json.tool > tests/Fixtures/krea/schema-$id.json"
 done
 ```
 Rename the files to `schema-generator.json`, `schema-editor.json`, `schema-upscaler.json`. Open each and confirm no key or personal data is present; remove `example_outputs` URLs if they embed tokens.
@@ -978,7 +949,7 @@ function snapshot(array $overrides = []): array {
 ```
 Every `Generation::factory()` default `execution_snapshot` must be `snapshot()` so polling and download fixtures always carry `credential_source` and `provider_ref`.
 
-- [ ] **Step 3: Run** `./vendor/bin/pest tests/Unit/Engines` → PASS. **Step 4: Commit** — `git commit -m "feat: KreaEngine HTTP adapter, error mapping, engine resolver"`
+- [ ] **Step 3: Run** `ddev pest tests/Unit/Engines` → PASS. **Step 4: Commit** — `git commit -m "feat: KreaEngine HTTP adapter, error mapping, engine resolver"`
 
 ### Task 7b: Gate B — Krea smoke run and real fixtures (ceiling US$10)
 
@@ -986,7 +957,7 @@ Every `Generation::factory()` default `execution_snapshot` must be `snapshot()` 
 
 Preconditions: Task 6b done, fresh key in `.env`, and the user's explicit approval of the US$10 ceiling in this session. Stop and ask if any is missing. Never run against the prototype key.
 
-- [ ] **Step 1: `krea:smoke` command** — `php artisan krea:smoke {versionId} {--input=* key=value} {--image=* key=path} {--name=}`: builds inputs (images read from local paths into data URLs), calls `KreaEngine::submit`, polls with `inspect` every 4 s up to 10 min printing native status, downloads outputs through a plain `Http::get` (the guarded downloader arrives in Task 8), prints dimensions, hosts and byte sizes, and writes JSON with `KreaErrorMessages::sanitizeDetail` applied to every string to `tests/Fixtures/krea/{name}-submit.json`, `{name}-job.json`, `{name}-result.json`. It never writes to the database.
+- [ ] **Step 1: `krea:smoke` command** — `ddev artisan krea:smoke {versionId} {--input=* key=value} {--image=* key=path} {--name=}`: builds inputs (images read from local paths into data URLs), calls `KreaEngine::submit`, polls with `inspect` every 4 s up to 10 min printing native status, downloads outputs through a plain `Http::get` (the guarded downloader arrives in Task 8), prints dimensions, hosts and byte sizes, and writes JSON with `KreaErrorMessages::sanitizeDetail` applied to every string to `tests/Fixtures/krea/{name}-submit.json`, `{name}-job.json`, `{name}-result.json`. It never writes to the database.
 - [ ] **Step 2: Run at most 8 submissions**, one at a time, checking Krea's balance page between runs: 1 text generation, 1 Skechers-style three-image execution, 1 Invierno-style one-image-plus-four-texts execution, 2 edits (one on an original, one on an upscale if available by then), 3 upscales (landscape, portrait, square). Stop immediately if a run exceeds a proportional share of the ceiling. Record in the results note: job cardinality per app, output hosts, real output dimensions vs `FourKRule::target`, base64 transport acceptance, and which upscaler input controls size.
 - [ ] **Step 3: `KreaFixturesTest`** — for each `{name}-submit.json` / `{name}-job.json` pair, `Http::fake` the execute and jobs endpoints with the fixture bodies and assert `KreaEngine` returns the recorded job IDs and that `outputs()` yields the recorded URL count. This is the contract evidence the spec §12 requires before engine tasks count as done.
 - [ ] **Step 4: Feed findings forward** — update the sizing heuristics list in Task 14 (`width`/`height`/`scale` names) and the image-field heuristics in Task 9 to the real property names if they differ. Note the changes in the results file.
@@ -1760,7 +1731,7 @@ Run → FAIL. **Step 2: Implement** as specified; all status writes go through `
 
 **Files:** Create `app/app/Console/Commands/MediaReconcile.php`; schedule in `routes/console.php` (`->everyMinute()->withoutOverlapping()`). Test: `tests/Feature/Generation/MediaReconcileTest.php`.
 
-**Interfaces — Produces:** `php artisan media:reconcile` does exactly three things, never calling `submit`:
+**Interfaces — Produces:** `ddev artisan media:reconcile` does exactly three things, never calling `submit`:
 1. `submitting` generations with `submission_started_at < now() - 120 s` → `failed`, `submission_unknown`, `retryable = true`, message "No pudimos confirmar si el trabajo se inició." (the claim is never cleared back to `pending`).
 2. `pending` generations older than 60 s → dispatch `RunGenerationJob` again (the claim makes a duplicate dispatch harmless).
 3. Non-terminal `generation_jobs` whose `next_poll_at < now() - 120 s` (or null and generation `submitted`/`processing` for > 120 s) → dispatch `PollGenerationJob`; `generation_outputs` in `pending` with `next_attempt_at < now() - 120 s`, or in `downloading` for > 300 s (a crashed download) → reset to `pending` and dispatch `DownloadOutputJob`.
@@ -1817,7 +1788,7 @@ it('blocks an editor from a brand they do not belong to', function () {
     $this->actingAs($ed)->get("/app/{$other->slug}")->assertNotFound();
 });
 ```
-Run → FAIL. **Step 2: Implement** the interfaces and providers. Create `ArtDirectorSeeder` that upserts `ad@picante.local` / password from `env('SEED_AD_PASSWORD', 'password')` with role `art_director`; register in `DatabaseSeeder`. **Step 3: Run** → PASS; also `php artisan db:seed` then log into `/admin` manually once. **Step 4: Commit** — `git commit -m "feat: panel access rules, brand tenancy, art director seeder"`
+Run → FAIL. **Step 2: Implement** the interfaces and providers. Create `ArtDirectorSeeder` that upserts `ad@picante.local` / password from `env('SEED_AD_PASSWORD', 'password')` with role `art_director`; register in `DatabaseSeeder`. **Step 3: Run** → PASS; also `ddev artisan db:seed` then `ddev launch /admin` and log in once. **Step 4: Commit** — `git commit -m "feat: panel access rules, brand tenancy, art director seeder"`
 
 ### Task 18: Brand and User resources
 
@@ -2088,9 +2059,9 @@ Run → FAIL. **Step 2: Implement.** **Step 3: Run** whole suite → PASS. **Ste
 **Files:** Modify `app/routes/console.php` (schedule `queue:prune-failed`, and `media:clean-inputs` daily), create `app/app/Console/Commands/CleanUnreferencedInputs.php`, `app/README.md`.
 
 - [ ] **Step 1: `media:clean-inputs`** — two-phase to avoid racing a concurrent `CreateGeneration`: pass 1 marks `input_uploads` older than 24 h with no `generation_inputs`/`pipeline_inputs` rows by setting `cleanup_marked_at = now()` (new nullable column, migration in this task); pass 2, on a later run, takes each row marked more than 10 minutes ago inside `DB::transaction` with `lockForUpdate()`, re-checks that it is still unreferenced, deletes the DB row **first** and the object second (an orphaned object is harmless; a dangling row pointing at a missing object is not). `CreateGeneration` clears `cleanup_marked_at` on any upload it links. Test in `tests/Feature/Media/CleanInputsTest.php`: referenced upload survives both passes, unreferenced is marked then deleted, an upload referenced between passes is unmarked and kept.
-- [ ] **Step 2: README** — how to run: `docker compose up -d`, `php artisan migrate --seed`, `php artisan serve`, `php artisan queue:work --tries=1 --timeout=150`, `php artisan schedule:work` (runs `media:reconcile` every minute and `media:clean-inputs` hourly), `npm run dev`; env vars table; how to add a pipeline; note on rotating the prototype key; `FAKE_ENGINE=1` toggle for UI work without spend.
+- [ ] **Step 2: README** — how to run: `ddev start`, `ddev artisan migrate --seed`, `ddev launch`, `ddev npm run dev`; the queue worker and scheduler are ddev daemons (`ddev exec supervisorctl status`; restart with `ddev exec supervisorctl restart 'webextradaemons:*'`), the scheduler runs `media:reconcile` every minute and `media:clean-inputs` hourly; `ddev pest`, `ddev pint`, `ddev mysql`, `ddev mc`, `ddev minio` (console), `ddev redis-cli`; env vars table; how to add a pipeline; note on rotating the prototype key; `FAKE_ENGINE=1` toggle for UI work without spend.
 - [ ] **Step 3: Full manual walkthrough** with the real key (fixtures from Task 7b tell you what each pipeline expects): create brand with key → "Probar conexión" → campaign → 3 pipelines (generator, editor, upscaler) → refresh schema → configure fields → activate → login as editor → generate → wait → open viewer → edit → 4K → gallery filters → download. Fix anything found; add a regression test for each fix.
-- [ ] **Step 4: Run** `./vendor/bin/pest` (all green) and `./vendor/bin/pint --test`. **Step 5: Commit** — `git commit -m "chore: scheduler, input cleanup, README, walkthrough fixes"`
+- [ ] **Step 4: Run** `ddev pest` (all green) and `./vendor/bin/pint --test`. **Step 5: Commit** — `git commit -m "chore: scheduler, input cleanup, README, walkthrough fixes"`
 
 ---
 

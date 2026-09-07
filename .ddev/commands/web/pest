@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+## Description: Run the Pest test suite inside the web container (from app/)
+## Usage: pest [args]
+## Example: "ddev pest --filter=Krea"
+cd /var/www/html/app && vendor/bin/pest "$@"

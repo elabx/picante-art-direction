@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+## Description: Run Laravel Pint (code style) inside the web container (from app/)
+## Usage: pint [args]
+## Example: "ddev pint --test"
+cd /var/www/html/app && vendor/bin/pint "$@"

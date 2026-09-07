@@ -15,8 +15,8 @@ Read, in this order, before doing anything:
 Then:
 - Run `/codex:setup` first (Task 0 of the plan).
 - Execute the plan with `superpowers:subagent-driven-development`, one task at a time, in order. Every task is TDD: failing test, then code, then green, then commit.
-- Working directory for app commands is `app/` (create it in Task 1). `prototypes/` is git-ignored and contains a credential; never read the key or commit that folder.
-- Stop and ask me before: entering Filament license credentials (I run the `composer config --auth` line myself), fetching real Krea schemas (Task 6b needs the fresh key and version IDs), spending Krea credit (Task 7b, ceiling US$10), or anything that leaves this repo.
+- The environment is ddev (already configured in `.ddev/`, PHP 8.5 pinned): run everything as `ddev composer`, `ddev artisan`, `ddev pest`, `ddev npm` from the repo root; never use host PHP, Composer, Node, or MySQL. The Laravel app goes in `app/` (Task 1 creates it). `prototypes/` is git-ignored and contains a credential; never read the key or commit that folder.
+- Stop and ask me before: entering Filament license credentials (I run the `ddev composer config --auth` line myself), changing the PHP version if a dependency refuses 8.5, fetching real Krea schemas (Task 6b needs the fresh key and version IDs), spending Krea credit (Task 7b, ceiling US$10), or anything that leaves this repo.
 - Hard rules from the spec: Spanish UI copy verbatim from the plan; standard Filament layouts; all images in object storage (MinIO locally, S3 + CloudFront signed URLs in prod); Krea key never in browser, logs, snapshots or queue payloads; never call the provider `submit` twice for one generation.
 - If Filament 5 / Livewire 4 signatures differ from the plan's snippets, use Laravel Boost's `search-docs` on the installed version and adapt, keeping behavior identical. Note every such adaptation in the commit message.
 - After each task, report in one short paragraph: what passed, what you changed against the plan and why, and the next task.

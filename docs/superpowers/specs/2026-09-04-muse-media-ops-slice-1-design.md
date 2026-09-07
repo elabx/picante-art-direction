@@ -21,7 +21,8 @@ Product name in the UI: **Media Ops**, with the current brand's logo where Filam
 
 | Topic | Decision |
 | --- | --- |
-| Framework | Laravel 12, Filament 5 (two panels), Livewire 4, Tailwind 4.1+, Pest. Filament 5 requires Livewire 4; lock a compatible set when scaffolding |
+| Framework | PHP 8.5 (pinned by ddev), Laravel 12, Filament 5 (two panels), Livewire 4, Tailwind 4.1+, Pest. Filament 5 requires Livewire 4; lock a compatible set when scaffolding |
+| Local environment | ddev is the only dev environment (decision 2026-09-07): project `muse` at the repo root, MySQL 8.0, MinIO and Redis add-ons, queue worker and scheduler as supervised daemons. No host PHP, Composer, Node, or MySQL |
 | Dev-time AI tooling | Laravel Boost + Filament Blueprint (user holds a license) as dev dependencies; Blueprint's planning guidance refines each Filament resource task before it is implemented |
 | Tenancy | By Brand in `/app`; none in `/admin` |
 | UI | Standard Filament layouts, components, and styling in both panels. Brand logo and Media Ops naming only. Custom Modernist theme is slice 2 |
@@ -32,12 +33,12 @@ Product name in the UI: **Media Ops**, with the current brand's logo where Filam
 | 4K delivery | Exactly 3,840 px on the longest edge, aspect ratio preserved, integer rounding. Stored output dimensions are validated before the badge is shown |
 | Editor controls | Generator shows its configured form. Editing asks only for an instruction on the viewed image. Upscaling uses the viewed image with no extra fields. Art Directors configure any other required values |
 | Selection | "Marcar seleccionada" is shared curation for everyone with access to the campaign |
-| Image storage | Object storage in every environment: AWS S3 in staging/production, MinIO in Docker for dev. Every Krea result is downloaded into a private bucket; the Krea URL is kept as provenance |
+| Image storage | Object storage in every environment: AWS S3 in staging/production, the ddev MinIO add-on in dev. Every Krea result is downloaded into a private bucket; the Krea URL is kept as provenance |
 | Image delivery | Private bucket behind CloudFront with origin access control; browsers get CloudFront signed URLs (10 min). Dev uses MinIO presigned URLs through the same interface |
 | Recovery | Recover known jobs first; never re-execute automatically. A new potentially billable execution requires the Editor's explicit confirmation |
 | Job completion | Queue worker polls Krea `GET /jobs/{id}`. Webhooks not used (unsigned) |
 | Krea credentials | Per-brand encrypted key with studio-wide fallback in `.env`; source pinned per generation. Never exposed to the browser |
-| Database / queue | MySQL; `database` queue driver in dev, Redis in production |
+| Database / queue | MySQL 8.0; Redis queue in dev (ddev add-on) and production |
 
 ## 4. Architecture
 
@@ -112,7 +113,7 @@ Editor and upscaler pipelines do not use this form. The Viewer supplies their au
 
 ### 4.5 Storage and delivery
 
-All images (uploads, pieces, campaign covers, brand logos) live in object storage in every environment; nothing image-related touches the web server's disk. Laravel `s3` driver, two private disks `inputs` and `pieces` as prefixes of one private bucket, configured only through `.env`. Dev runs MinIO via `docker compose up minio`.
+All images (uploads, pieces, campaign covers, brand logos) live in object storage in every environment; nothing image-related touches the web server's disk. Laravel `s3` driver, two private disks `inputs` and `pieces` as prefixes of one private bucket, configured only through `.env`. Dev uses the ddev MinIO add-on (`http://minio:10101` inside the web container; bucket `muse-media` created by a post-start hook).
 
 **Uploads.** Livewire's temporary upload disk is set to the S3-backed `inputs` disk with rules `image|max:20480`; a bucket lifecycle rule expires temporary objects after 24 h. On acceptance the file is validated (JPEG/PNG/WebP bytes, MIME, dimensions, read in memory), copied to immutable `inputs/{brand}/{upload_uuid}.{ext}`, and an `InputUpload` ownership row is created. Filament's path-tampering protection plus an ownership-aware callback cover the custom form. Backend commands accept upload IDs, never client paths.
 
@@ -215,6 +216,8 @@ Moved to slice 2 by decision on 2026-09-05: ZIP export of selected pieces (per-p
 
 ## 13. Local environment notes
 
-- PHP 8.2.8, Composer 2.1.5 (upgrade to 2.8+ before scaffolding), Node 22.14.0, MySQL, Docker 29.4 present. Laravel Herd not installed; dev loop is `php artisan serve`, `php artisan queue:work`, `php artisan schedule:work`, and MinIO from Compose.
-- Filament's package repository needs `composer config --auth http-basic.packages.filamentphp.com <email> <license-key>` before `composer require filament/blueprint --dev`.
+- **ddev** (v1.25+, Docker via OrbStack) is the development environment; verified 2026-09-07: PHP 8.5.7, Composer 2.10, Node 24, MySQL 8.0, MinIO, Redis. Config lives in `.ddev/config.yaml` (generated) and `.ddev/config.muse.yaml` (daemons and post-start hooks: `muse_test` database, `muse-media` bucket with a 1-day expiry on `inputs/tmp/`).
+- Commands run from the repo root: `ddev composer …` and `ddev artisan …` execute inside `app/` (`composer_root: app`); `ddev pest`, `ddev pint`, `ddev npm …`, `ddev mysql`, `ddev mc …` (MinIO client), `ddev minio` (console), `ddev redis-cli`. Queue worker and scheduler restart with `ddev exec supervisorctl restart 'webextradaemons:*'`.
+- URLs: app `https://muse.ddev.site`, MinIO console `https://muse.ddev.site:9090` (user and password `ddevminio`).
+- Filament's package repository needs `ddev composer config --auth http-basic.packages.filamentphp.com <email> <license-key>` (lands in the git-ignored `app/auth.json`) before `ddev composer require filament/blueprint --dev`.
 - The Laravel app lives in `app/` inside this repository; `docs/` stays at the root; `prototypes/` stays git-ignored.
