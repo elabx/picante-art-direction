@@ -127,13 +127,16 @@ it('denies a direct create call after an art director role is revoked', function
     $component->call('create')->assertForbidden();
 });
 
-it('denies the brand connection action after an art director role is revoked', function (): void {
+it('denies direct server execution of the brand connection action after role revocation', function (): void {
     $operator = User::factory()->artDirector()->create();
     $this->actingAs($operator);
     $brand = Brand::factory()->create();
+    $engine = fakeEngine();
     $component = Livewire::test(EditBrand::class, ['record' => $brand->id]);
 
     $operator->update(['role' => 'editor']);
 
-    $component->assertActionHidden('ping');
+    $component->call('mountAction', 'ping')->assertForbidden();
+
+    expect($engine->pingCalls)->toBe(0);
 });
