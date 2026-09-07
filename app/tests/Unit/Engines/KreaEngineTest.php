@@ -97,6 +97,16 @@ it('wraps a connection failure on describe into KreaException', function () {
     expect($calls)->toBe(2);
 });
 
+it('pings the node apps endpoint and maps provider failures without exposing the key', function (): void {
+    Http::fake(['https://api.krea.test/node-apps?limit=1' => Http::response(['message' => 'Bearer dummy-key'], 401)]);
+
+    expect(fn () => $this->engine->ping())
+        ->toThrow(KreaException::class, 'Clave de acceso inválida o faltante. Bearer [redacted]');
+    Http::assertSent(fn ($request): bool => $request->method() === 'GET'
+        && $request->url() === 'https://api.krea.test/node-apps?limit=1'
+        && $request->hasHeader('Authorization', 'Bearer dummy-key'));
+});
+
 it('retries one transient describe response before returning its schema', function () {
     $calls = 0;
     $fixture = json_decode((string) file_get_contents(base_path('tests/Fixtures/krea/schema-generator.json')), true, flags: JSON_THROW_ON_ERROR);

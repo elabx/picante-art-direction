@@ -153,6 +153,24 @@ final class KreaEngine implements ImageEngine
         return ResultFlattener::flatten($result);
     }
 
+    public function ping(): void
+    {
+        try {
+            $response = $this->http(15)->get('/node-apps', ['limit' => 1]);
+        } catch (ConnectionException) {
+            throw new KreaException(KreaErrorMessages::network(), null);
+        }
+
+        $payload = $this->json($response);
+
+        if (! $response->successful()) {
+            throw new KreaException(
+                KreaErrorMessages::forStatus($response->status(), $this->providerDetail($payload)),
+                $response->status(),
+            );
+        }
+    }
+
     private function http(int $timeout): PendingRequest
     {
         return Http::baseUrl($this->baseUrl)
