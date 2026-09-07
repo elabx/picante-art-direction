@@ -18,4 +18,4 @@ hooks:
     # Private bucket holding the inputs/ and pieces/ prefixes, plus a 1-day expiry on temporary uploads.
     - exec-host: "ddev mc alias set local http://localhost:10101 ddevminio ddevminio"
     - exec-host: "ddev mc mb --ignore-existing local/muse-media"
-    - exec-host: "ddev mc ilm rule add --expire-days 1 --prefix 'inputs/tmp/' local/muse-media || true"
+    - exec-host: "ddev mc ilm rule ls --json local/muse-media | grep -q '\"Expiration\":{\"Days\":1}.*\"Filter\":{\"Prefix\":\"inputs/tmp/\"}.*\"Status\":\"Enabled\"' || ddev mc ilm rule add --expire-days 1 --prefix 'inputs/tmp/' local/muse-media"
