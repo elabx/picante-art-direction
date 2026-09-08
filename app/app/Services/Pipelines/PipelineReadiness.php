@@ -21,13 +21,14 @@ final class PipelineReadiness
         }
 
         $fields = $pipeline->activeFields()->get();
-        $errors = [];
+        $errors = SchemaSubset::rootErrors($pipeline->input_schema);
+        $sizingFields = $this->sizingFieldNames($pipeline->kind, $fields->all());
 
         foreach ($fields as $field) {
-            $this->appendFieldErrors($pipeline, $field, $errors);
+            $this->appendFieldErrors($pipeline, $field, $errors, $sizingFields);
         }
 
-        $this->appendKindErrors($pipeline->kind, $fields->all(), $errors);
+        $this->appendKindErrors($pipeline->kind, $fields->all(), $errors, $sizingFields);
 
         return $errors;
     }
@@ -63,18 +64,29 @@ final class PipelineReadiness
     /**
      * @param  list<string>  $errors
      */
-    private function appendFieldErrors(Pipeline $pipeline, PipelineField $field, array &$errors): void
+    private function appendFieldErrors(Pipeline $pipeline, PipelineField $field, array &$errors, array $sizingFields): void
     {
         $classification = SchemaSubset::classify($field->source_schema ?? [], $field->name);
         if ($field->input_type === InputType::Unknown || $classification['errors'] !== []) {
             $errors[] = "Campo {$field->name}: tipo no soportado.";
         }
 
+        if (! SchemaSubset::isCompatible($field->input_type, $classification['input_type'])) {
+            $errors[] = "Campo {$field->name}: el tipo configurado es incompatible con el transporte.";
+        }
+        if (($field->role === FieldRole::Image && $field->input_type !== InputType::Image)
+            || ($field->role === FieldRole::Prompt && $field->input_type !== InputType::String)) {
+            $errors[] = "Campo {$field->name}: el vínculo es incompatible con el tipo configurado.";
+        }
+
         if ($field->needs_configuration) {
             $errors[] = "Campo {$field->name}: nuevo o modificado; revisa su configuración.";
         }
 
-        if ($field->required && $field->visibility === FieldVisibility::Hidden && ! $field->has_fixed_value && $field->role === FieldRole::None) {
+        $injected = ($pipeline->kind === PipelineKind::Editor && $field->role === FieldRole::Prompt)
+            || ($pipeline->kind !== PipelineKind::Generator && $field->role === FieldRole::Image)
+            || in_array($field->name, $sizingFields, true);
+        if ($field->required && $field->visibility === FieldVisibility::Hidden && ! $field->has_fixed_value && ! $injected) {
             $errors[] = "Campo {$field->name}: es obligatorio y no tiene valor fijo.";
         }
 
@@ -121,7 +133,7 @@ final class PipelineReadiness
      * @param  list<PipelineField>  $fields
      * @param  list<string>  $errors
      */
-    private function appendKindErrors(PipelineKind $kind, array $fields, array &$errors): void
+    private function appendKindErrors(PipelineKind $kind, array $fields, array &$errors, array $sizingFields): void
     {
         $images = array_filter($fields, fn (PipelineField $field): bool => $field->role === FieldRole::Image);
         $prompts = array_filter($fields, fn (PipelineField $field): bool => $field->role === FieldRole::Prompt);
@@ -131,7 +143,7 @@ final class PipelineReadiness
                 $errors[] = 'Un editor necesita exactamente una imagen y un prompt vinculados.';
             }
 
-            $this->appendHiddenFixedErrors($fields, $errors);
+            $this->appendHiddenFixedErrors($fields, $errors, $sizingFields);
         }
 
         if ($kind === PipelineKind::Upscaler) {
@@ -139,7 +151,7 @@ final class PipelineReadiness
                 $errors[] = 'Un upscaler necesita exactamente una imagen vinculada y ningún prompt.';
             }
 
-            $this->appendHiddenFixedErrors($fields, $errors);
+            $this->appendHiddenFixedErrors($fields, $errors, $sizingFields);
         }
 
         if ($kind === PipelineKind::Generator && count($prompts) > 1) {
@@ -151,13 +163,33 @@ final class PipelineReadiness
      * @param  list<PipelineField>  $fields
      * @param  list<string>  $errors
      */
-    private function appendHiddenFixedErrors(array $fields, array &$errors): void
+    private function appendHiddenFixedErrors(array $fields, array &$errors, array $sizingFields): void
     {
         foreach ($fields as $field) {
-            if ($field->required && $field->role === FieldRole::None && ($field->visibility !== FieldVisibility::Hidden || ! $field->has_fixed_value)) {
+            if ($field->required && $field->role === FieldRole::None && ! in_array($field->name, $sizingFields, true) && ($field->visibility !== FieldVisibility::Hidden || ! $field->has_fixed_value)) {
                 $errors[] = "Campo {$field->name}: el editor no muestra campos; configura un valor fijo.";
             }
         }
+    }
+
+    /**
+     * @param  list<PipelineField>  $fields
+     * @return list<string>
+     */
+    public function sizingFieldNames(PipelineKind $kind, array $fields): array
+    {
+        if ($kind !== PipelineKind::Upscaler) {
+            return [];
+        }
+        $byName = collect($fields)->keyBy('name');
+        foreach ([['width', 'height'], ['target_width', 'target_height']] as [$width, $height]) {
+            if ($byName->get($width)?->input_type === InputType::Integer && $byName->get($height)?->input_type === InputType::Integer) {
+                return [$width, $height];
+            }
+        }
+        $scaleFields = array_filter($fields, fn (PipelineField $field): bool => in_array($field->name, ['scale', 'scale_factor'], true) && $field->input_type === InputType::Number);
+
+        return count($scaleFields) === 1 ? [array_values($scaleFields)[0]->name] : [];
     }
 
     private function hasNullableType(mixed $type): bool

@@ -81,7 +81,7 @@ it('omits blank optional form values while preserving false', function (): void 
 
 it('composes a configured fixed upload reference and returns its unique id', function (): void {
     $pipeline = Pipeline::factory()->create(['input_schema' => ['properties' => []]]);
-    $upload = InputUpload::factory()->create();
+    $upload = InputUpload::factory()->for($pipeline->campaign->brand)->create();
     $pipeline->inputUploads()->attach($upload);
     PipelineField::factory()->for($pipeline)->create([
         'name' => 'marca_de_agua',

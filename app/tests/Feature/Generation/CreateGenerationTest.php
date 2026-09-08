@@ -22,6 +22,27 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
+function configuredSourcePipeline(Campaign $campaign, PipelineKind $kind): Pipeline
+{
+    $properties = ['image' => ['type' => 'string']];
+    if ($kind === PipelineKind::Editor) {
+        $properties['prompt'] = ['type' => 'string'];
+    }
+    $pipeline = Pipeline::factory()->for($campaign)->create([
+        'kind' => $kind, 'is_active' => true, 'readiness_errors' => [],
+        'input_schema' => ['type' => 'object', 'properties' => $properties],
+    ]);
+    foreach ($properties as $name => $schema) {
+        PipelineField::factory()->for($pipeline)->create([
+            'name' => $name, 'source_schema' => $schema,
+            'input_type' => $name === 'image' ? InputType::Image : InputType::String,
+            'role' => $name === 'image' ? FieldRole::Image : FieldRole::Prompt,
+        ]);
+    }
+
+    return $pipeline;
+}
+
 it('creates a pending series generation with an immutable typed snapshot and dispatches the run job', function (): void {
     Queue::fake();
     $brand = Brand::factory()->create();
@@ -196,8 +217,8 @@ it('selects only ready edit and upscale pipelines for a source piece', function 
     $sourceGeneration = Generation::factory()->for($campaign)->create();
     $sourceOutput = GenerationOutput::factory()->for($sourceGeneration)->create();
     $source = Piece::factory()->for($sourceGeneration)->for($sourceOutput, 'output')->create();
-    $editor = Pipeline::factory()->for($campaign)->create(['kind' => PipelineKind::Editor, 'is_active' => true, 'readiness_errors' => []]);
-    $upscaler = Pipeline::factory()->for($campaign)->create(['kind' => PipelineKind::Upscaler, 'is_active' => true, 'readiness_errors' => []]);
+    $editor = configuredSourcePipeline($campaign, PipelineKind::Editor);
+    $upscaler = configuredSourcePipeline($campaign, PipelineKind::Upscaler);
 
     $edit = app(CreateGeneration::class)->edit($user, $source, 'ajusta la luz', (string) Str::uuid());
     $upscale = app(CreateGeneration::class)->upscale($user, $source, (string) Str::uuid());
@@ -223,12 +244,8 @@ it('selects the active source pipeline when an older inactive pipeline exists', 
         'readiness_errors' => [],
         'sort_order' => 0,
     ]);
-    $active = Pipeline::factory()->for($campaign)->create([
-        'kind' => PipelineKind::Editor,
-        'is_active' => true,
-        'readiness_errors' => [],
-        'sort_order' => 1,
-    ]);
+    $active = configuredSourcePipeline($campaign, PipelineKind::Editor);
+    $active->update(['sort_order' => 1]);
 
     $generation = app(CreateGeneration::class)->edit($user, $source, 'ajusta la luz', (string) Str::uuid());
 
@@ -244,11 +261,7 @@ it('replays a source request after the active pipeline is replaced', function ()
     $sourceGeneration = Generation::factory()->for($campaign)->create();
     $sourceOutput = GenerationOutput::factory()->for($sourceGeneration)->create();
     $source = Piece::factory()->for($sourceGeneration)->for($sourceOutput, 'output')->create();
-    $originalPipeline = Pipeline::factory()->for($campaign)->create([
-        'kind' => PipelineKind::Editor,
-        'is_active' => true,
-        'readiness_errors' => [],
-    ]);
+    $originalPipeline = configuredSourcePipeline($campaign, PipelineKind::Editor);
     $requestId = (string) Str::uuid();
     $original = app(CreateGeneration::class)->edit($user, $source, 'ajusta la luz', $requestId);
     $originalPipeline->update(['is_active' => false]);

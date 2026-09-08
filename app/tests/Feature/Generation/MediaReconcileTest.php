@@ -1,5 +1,7 @@
 <?php
 
+use App\Engines\Data\JobObservation;
+use App\Engines\EngineResolver;
 use App\Enums\FailureReason;
 use App\Enums\GenerationStatus;
 use App\Enums\OutputStatus;
@@ -10,6 +12,50 @@ use App\Models\Generation;
 use App\Models\GenerationJob;
 use App\Models\GenerationOutput;
 use Illuminate\Support\Facades\Queue;
+
+it('recovers lost initial and repeated download dispatches from a completed observation', function (): void {
+    $this->travelTo(now()->startOfSecond());
+    Queue::fake();
+    $engine = fakeEngine()->setJob('lost-download', new JobObservation('completed', 'done', null, ['urls' => ['https://cdn.test/lost.png']], null));
+    $generation = Generation::factory()->create(['status' => 'submitted', 'submitted_at' => now()]);
+    $job = GenerationJob::factory()->for($generation)->create(['provider_job_id' => 'lost-download']);
+
+    (new PollGenerationJob($job->id))->handle(app(EngineResolver::class));
+    $output = $generation->outputs()->sole();
+    Queue::assertPushed(DownloadOutputJob::class, 1);
+    expect($job->fresh()->normalized_status)->toBe('completed');
+
+    for ($lostDispatch = 0; $lostDispatch < 2; $lostDispatch++) {
+        Queue::fake();
+        $this->travel(61)->seconds();
+        $this->artisan('media:reconcile')->assertExitCode(0);
+        Queue::assertPushed(DownloadOutputJob::class, fn (DownloadOutputJob $queued): bool => $queued->outputId === $output->id);
+        Queue::assertPushed(DownloadOutputJob::class, 1);
+        Queue::assertNotPushed(PollGenerationJob::class);
+        Queue::assertNotPushed(RunGenerationJob::class);
+        expect($output->fresh()->attempts)->toBe(0)
+            ->and($output->fresh()->claim_version)->toBe(0);
+        $this->artisan('media:reconcile')->assertExitCode(0);
+        Queue::assertPushed(DownloadOutputJob::class, 1);
+    }
+
+    expect($engine->submissions)->toBe([])
+        ->and($generation->fresh()->status)->toBe(GenerationStatus::Downloading);
+});
+
+it('recovers only aged legacy pending outputs with no due timestamp', function (): void {
+    $this->travelTo(now()->startOfSecond());
+    Queue::fake();
+    $generation = Generation::factory()->create(['status' => 'downloading']);
+    $job = GenerationJob::factory()->for($generation)->create(['normalized_status' => 'completed']);
+    $old = GenerationOutput::factory()->for($generation)->for($job, 'job')->create(['next_attempt_at' => null, 'updated_at' => now()->subSeconds(61)]);
+    GenerationOutput::factory()->for($generation)->for($job, 'job')->create(['index' => 1, 'next_attempt_at' => null]);
+
+    $this->artisan('media:reconcile')->assertExitCode(0);
+
+    Queue::assertPushed(DownloadOutputJob::class, fn (DownloadOutputJob $queued): bool => $queued->outputId === $old->id);
+    Queue::assertPushed(DownloadOutputJob::class, 1);
+});
 
 it('marks stale submitting claims unknown and redispatches lost work without submitting', function (): void {
     $this->travelTo(now()->startOfSecond());

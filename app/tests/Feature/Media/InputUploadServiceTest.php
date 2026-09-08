@@ -9,6 +9,37 @@ use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
+it('compensates the copied object when saving its ownership record fails', function (): void {
+    Storage::fake('inputs');
+    $disk = Storage::disk('inputs');
+    $bytes = file_get_contents(base_path('tests/Fixtures/images/tiny.png'));
+    $disk->put('tmp/save-failure.png', $bytes);
+    $brand = Brand::factory()->create();
+    $user = User::factory()->editor()->create();
+    $primary = new RuntimeException('ownership database unavailable');
+    $dispatcher = InputUpload::getEventDispatcher();
+    InputUpload::setEventDispatcher(clone $dispatcher);
+    $copiedPath = null;
+    InputUpload::creating(function (InputUpload $upload) use ($primary, $disk, &$copiedPath): never {
+        $copiedPath = $upload->storage_path;
+        $disk->assertExists($copiedPath);
+        throw $primary;
+    });
+
+    try {
+        app(InputUploadService::class)->finalize('tmp/save-failure.png', $brand, $user);
+        $this->fail('Expected the ownership save to fail.');
+    } catch (RuntimeException $exception) {
+        expect($exception)->toBe($primary);
+    } finally {
+        InputUpload::setEventDispatcher($dispatcher);
+    }
+
+    $disk->assertMissing($copiedPath);
+    expect($disk->get('tmp/save-failure.png'))->toBe($bytes);
+    $this->assertDatabaseCount('input_uploads', 0);
+});
+
 it('finalizes a temporary upload into an owned immutable object', function (): void {
     Storage::fake('inputs');
     Storage::disk('inputs')->put('tmp/x.png', file_get_contents(base_path('tests/Fixtures/images/tiny.png')));

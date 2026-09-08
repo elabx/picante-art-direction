@@ -56,7 +56,12 @@ final class MediaReconcile extends Command
         foreach (GenerationOutput::query()
             ->where(function ($query) use ($pendingCutoff, $downloadCutoff): void {
                 $query->where(function ($query) use ($pendingCutoff): void {
-                    $query->where('status', OutputStatus::Pending)->where('next_attempt_at', '<', $pendingCutoff);
+                    $query->where('status', OutputStatus::Pending)->where(function ($query) use ($pendingCutoff): void {
+                        $query->where('next_attempt_at', '<', $pendingCutoff)
+                            ->orWhere(function ($query) use ($pendingCutoff): void {
+                                $query->whereNull('next_attempt_at')->where('updated_at', '<', $pendingCutoff);
+                            });
+                    });
                 })->orWhere(function ($query) use ($downloadCutoff): void {
                     $query->where('status', OutputStatus::Downloading)->where('updated_at', '<', $downloadCutoff);
                 });

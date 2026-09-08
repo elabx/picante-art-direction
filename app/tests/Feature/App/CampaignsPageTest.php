@@ -14,10 +14,9 @@ it('lists only the current brand campaigns with completed series and piece count
     $brand = Brand::factory()->create();
     $brand->users()->attach($editor);
     $campaign = Campaign::factory()->for($brand)->create(['name' => 'Aliados']);
-    Generation::factory()->for($campaign)->create(['kind' => 'series', 'status' => 'completed']);
+    Generation::factory()->count(2)->for($campaign)->create(['kind' => 'series', 'status' => 'completed']);
     Generation::factory()->for($campaign)->create(['kind' => 'series', 'status' => 'pending']);
-    $piece = Piece::factory()->create();
-    $piece->forceFill(['campaign_id' => $campaign->id])->save();
+    Piece::factory()->count(3)->create()->each(fn (Piece $piece) => $piece->forceFill(['campaign_id' => $campaign->id])->save());
     Campaign::factory()->create(['name' => 'Ajena']);
 
     $this->actingAs($editor);
@@ -27,7 +26,8 @@ it('lists only the current brand campaigns with completed series and piece count
         ->assertCanSeeTableRecords([$campaign])
         ->assertSee('Aliados')
         ->assertDontSee('Ajena')
-        ->assertSee('1');
+        ->assertTableColumnStateSet('series_count', 2, record: $campaign)
+        ->assertTableColumnStateSet('pieces_count', 3, record: $campaign);
 });
 
 it('uses the campaign media route for covers and opens the campaign URL', function (): void {

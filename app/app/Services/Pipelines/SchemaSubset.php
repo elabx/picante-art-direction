@@ -6,6 +6,52 @@ use App\Enums\InputType;
 
 final class SchemaSubset
 {
+    /** @return list<string> */
+    public static function rootErrors(array $schema): array
+    {
+        $errors = [];
+        foreach (array_keys($schema) as $key) {
+            if (! in_array($key, ['type', 'properties', 'required', 'additionalProperties', 'title', 'description', '$schema'], true)) {
+                $errors[] = "Esquema: palabra clave no soportada: {$key}.";
+            }
+        }
+        if (array_key_exists('type', $schema) && $schema['type'] !== 'object') {
+            $errors[] = 'Esquema: type debe ser object.';
+        }
+        foreach (['title', 'description', '$schema'] as $key) {
+            if (array_key_exists($key, $schema) && ! is_string($schema[$key])) {
+                $errors[] = "Esquema: {$key} debe ser texto.";
+            }
+        }
+        $properties = is_array($schema['properties'] ?? null) ? $schema['properties'] : [];
+        if (! isset($schema['properties']) || ! is_array($schema['properties'])) {
+            $errors[] = 'El flujo no publica un esquema de entradas.';
+        } elseif ($properties !== [] && array_is_list($properties)) {
+            $errors[] = 'Esquema: properties debe ser un objeto de propiedades.';
+        } else {
+            foreach ($properties as $name => $property) {
+                if (! is_array($property)) {
+                    $errors[] = "Campo {$name}: esquema no soportado.";
+
+                    continue;
+                }
+                foreach (self::classify($property, (string) $name)['errors'] as $error) {
+                    $errors[] = "Campo {$name}: {$error}.";
+                }
+            }
+        }
+        if (array_key_exists('required', $schema)
+            && (! is_array($schema['required']) || ! array_is_list($schema['required'])
+                || array_filter($schema['required'], fn (mixed $name): bool => ! is_string($name) || ! array_key_exists($name, $properties)) !== [])) {
+            $errors[] = 'Esquema: required debe enumerar propiedades existentes.';
+        }
+        if (array_key_exists('additionalProperties', $schema) && ! is_bool($schema['additionalProperties'])) {
+            $errors[] = 'Esquema: additionalProperties solo admite un booleano.';
+        }
+
+        return $errors;
+    }
+
     private const SUPPORTED_KEYS = [
         'type',
         'enum',

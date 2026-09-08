@@ -41,6 +41,11 @@ final class InputComposer
 
         $this->rejectExtraInputs($visibleInputs, $visibleFields);
 
+        $configurationErrors = $this->readiness->evaluate($pipeline);
+        if ($configurationErrors !== []) {
+            throw ValidationException::withMessages(['pipeline' => $configurationErrors]);
+        }
+
         if (in_array($pipeline->kind, [PipelineKind::Editor, PipelineKind::Upscaler], true) && $sourcePiece === null) {
             $this->invalid('source_piece', 'La pieza de origen es obligatoria.');
         }
@@ -155,23 +160,15 @@ final class InputComposer
             $this->invalid('source_piece', 'La pieza de origen debe tener dimensiones positivas.');
         }
 
-        $fieldsByName = $fields->keyBy('name');
-        foreach ([['width', 'height'], ['target_width', 'target_height']] as [$widthName, $heightName]) {
-            $widthField = $fieldsByName->get($widthName);
-            $heightField = $fieldsByName->get($heightName);
+        $names = $this->readiness->sizingFieldNames($pipeline->kind, $fields->all());
+        if (count($names) === 2) {
+            $target = FourKRule::target($sourcePiece->width, $sourcePiece->height);
 
-            if ($widthField?->input_type === InputType::Integer && $heightField?->input_type === InputType::Integer) {
-                $target = FourKRule::target($sourcePiece->width, $sourcePiece->height);
-
-                return [$widthName => $target['width'], $heightName => $target['height']];
-            }
+            return [$names[0] => $target['width'], $names[1] => $target['height']];
         }
 
-        $scaleFields = $fields->filter(fn (PipelineField $field): bool => in_array($field->name, ['scale', 'scale_factor'], true)
-            && $field->input_type === InputType::Number);
-
-        if ($scaleFields->count() === 1) {
-            return [$scaleFields->first()->name => round(3840 / max($sourcePiece->width, $sourcePiece->height), 2)];
+        if (count($names) === 1) {
+            return [$names[0] => round(3840 / max($sourcePiece->width, $sourcePiece->height), 2)];
         }
 
         return [];

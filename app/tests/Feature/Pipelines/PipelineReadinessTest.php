@@ -5,9 +5,113 @@ use App\Enums\FieldVisibility;
 use App\Enums\InputType;
 use App\Enums\PipelineKind;
 use App\Models\InputUpload;
+use App\Models\Piece;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
+use App\Models\User;
+use App\Services\Generation\InputComposer;
+use App\Services\Pipelines\PipelineActivation;
+use App\Services\Pipelines\PipelineFieldConfiguration;
 use App\Services\Pipelines\PipelineReadiness;
+use Illuminate\Validation\ValidationException;
+
+it('blocks activation and composition of unsupported root envelopes', function (array $root, string $keyword): void {
+    $pipeline = Pipeline::factory()->create(['input_schema' => $root + ['properties' => ['prompt' => ['type' => 'string']]]]);
+    PipelineField::factory()->for($pipeline)->create(['name' => 'prompt']);
+
+    expect(implode(' ', app(PipelineReadiness::class)->evaluate($pipeline)))->toContain($keyword);
+    expect(fn () => app(PipelineActivation::class)->activate($pipeline))->toThrow(ValidationException::class);
+    expect(fn () => app(InputComposer::class)->compose($pipeline, ['prompt' => 'hola']))->toThrow(ValidationException::class);
+    expect($pipeline->fresh()->is_active)->toBeFalse();
+})->with([
+    'union' => [['type' => 'object', 'oneOf' => [['required' => ['prompt']]]], 'oneOf'],
+    'reference' => [['$ref' => '#/other'], '$ref'],
+    'array root' => [['type' => 'array'], 'type'],
+    'schema additional properties' => [['additionalProperties' => ['type' => 'string']], 'additionalProperties'],
+    'malformed required' => [['required' => 'prompt'], 'required'],
+    'properties list' => [['properties' => [['type' => 'string']]], 'properties'],
+    'malformed metadata' => [['title' => ['nested' => 'title']], 'title'],
+]);
+
+it('rejects integer transport before composing a bound source image', function (): void {
+    $pipeline = pipelineWithProperties(['image' => ['type' => 'integer'], 'prompt' => ['type' => 'string']], PipelineKind::Editor);
+    PipelineField::factory()->for($pipeline)->create(['name' => 'image', 'source_schema' => ['type' => 'integer'], 'input_type' => InputType::Image, 'role' => FieldRole::Image, 'required' => true]);
+    PipelineField::factory()->for($pipeline)->create(['name' => 'prompt', 'role' => FieldRole::Prompt]);
+    $piece = Piece::factory()->create();
+
+    expect(fn () => app(InputComposer::class)->compose($pipeline, [], $piece, 'ajusta la luz'))->toThrow(ValidationException::class);
+});
+
+it('rejects semantic and binding overrides incompatible with transport', function (string $transport, InputType $semantic, FieldRole $role): void {
+    $pipeline = pipelineWithProperties(['value' => ['type' => $transport]]);
+    PipelineField::factory()->for($pipeline)->create(['name' => 'value', 'source_schema' => ['type' => $transport], 'input_type' => $semantic, 'role' => $role]);
+
+    expect(implode(' ', app(PipelineReadiness::class)->evaluate($pipeline)))->toContain('value');
+    expect(fn () => app(PipelineActivation::class)->activate($pipeline))->toThrow(ValidationException::class);
+    expect(fn () => app(InputComposer::class)->compose($pipeline, []))->toThrow(ValidationException::class);
+})->with([
+    ['integer', InputType::Image, FieldRole::Image],
+    ['boolean', InputType::String, FieldRole::None],
+    ['number', InputType::Integer, FieldRole::None],
+    ['integer', InputType::Integer, FieldRole::Prompt],
+    ['string', InputType::String, FieldRole::Image],
+    ['string', InputType::Image, FieldRole::Prompt],
+]);
+
+it('deactivates a generator and clears its default when an admin hides its required prompt', function (): void {
+    $pipeline = pipelineWithProperties(['prompt' => ['type' => 'string']]);
+    $field = PipelineField::factory()->for($pipeline)->create(['name' => 'prompt', 'role' => FieldRole::Prompt, 'required' => true]);
+    $activation = app(PipelineActivation::class);
+    $activation->activate($pipeline);
+    $activation->setDefault($pipeline->campaign, $pipeline);
+
+    app(PipelineFieldConfiguration::class)->save($pipeline, $field, ['visibility' => FieldVisibility::Hidden->value], User::factory()->artDirector()->create());
+
+    expect($pipeline->fresh()->is_active)->toBeFalse()
+        ->and($pipeline->campaign->fresh()->default_pipeline_id)->toBeNull()
+        ->and(implode(' ', $pipeline->fresh()->readiness_errors))->toContain('prompt');
+    expect(fn () => $activation->activate($pipeline))->toThrow(ValidationException::class);
+    expect(fn () => app(InputComposer::class)->compose($pipeline->fresh(), []))->toThrow(ValidationException::class);
+});
+
+it('preserves multiple string image overrides and no prompt on generators', function (): void {
+    $pipeline = pipelineWithProperties(['a' => ['type' => 'string'], 'b' => ['type' => ['string', 'null'], 'x-krea-wire-type' => 'image']]);
+    foreach ($pipeline->input_schema['properties'] as $name => $schema) {
+        PipelineField::factory()->for($pipeline)->create(['name' => $name, 'source_schema' => $schema, 'input_type' => InputType::Image, 'role' => FieldRole::Image]);
+    }
+
+    app(PipelineActivation::class)->activate($pipeline);
+
+    expect($pipeline->fresh()->is_active)->toBeTrue()
+        ->and(app(InputComposer::class)->compose($pipeline, []))->toBe(['inputs' => [], 'uploadIds' => []]);
+});
+
+it('accepts hidden required injected editor and upscaler values', function (PipelineKind $kind, array $sizing, array $expected): void {
+    $properties = ['image' => ['type' => 'string', 'x-krea-wire-type' => 'image']] + $sizing;
+    if ($kind === PipelineKind::Editor) {
+        $properties['prompt'] = ['type' => 'string', 'x-krea-wire-type' => 'text'];
+    }
+    $pipeline = pipelineWithProperties($properties, $kind);
+    foreach ($properties as $name => $schema) {
+        PipelineField::factory()->for($pipeline)->create([
+            'name' => $name, 'source_schema' => $schema, 'required' => true, 'visibility' => FieldVisibility::Hidden,
+            'input_type' => $name === 'image' ? InputType::Image : InputType::from($schema['type']),
+            'role' => match ($name) {
+                'image' => FieldRole::Image, 'prompt' => FieldRole::Prompt, default => FieldRole::None
+            },
+        ]);
+    }
+    $piece = Piece::factory()->create(['width' => 1920, 'height' => 1080]);
+
+    app(PipelineActivation::class)->activate($pipeline);
+
+    expect(app(InputComposer::class)->compose($pipeline, [], $piece, 'ajusta la luz')['inputs'])
+        ->toBe(['image' => ['__piece' => $piece->id]] + $expected);
+})->with([
+    'editor' => [PipelineKind::Editor, [], ['prompt' => 'ajusta la luz']],
+    'dimensions' => [PipelineKind::Upscaler, ['width' => ['type' => 'integer'], 'height' => ['type' => 'integer']], ['width' => 3840, 'height' => 2160]],
+    'scale' => [PipelineKind::Upscaler, ['scale' => ['type' => 'number']], ['scale' => 2.0]],
+]);
 
 function pipelineWithProperties(array $properties, PipelineKind $kind = PipelineKind::Generator): Pipeline
 {

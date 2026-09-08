@@ -120,8 +120,7 @@ final class GenerationStateMachine
         return $this->locked($output->generation_id, function (Generation $generation) use ($outputId, $pendingCutoff, $downloadingCutoff): ?OutputStatus {
             $output = $generation->outputs()->lockForUpdate()->find($outputId);
             $pending = $output?->status === OutputStatus::Pending
-                && $output->next_attempt_at !== null
-                && $output->next_attempt_at->lessThan($pendingCutoff);
+                && ($output->next_attempt_at ?? $output->updated_at)->lessThan($pendingCutoff);
             $downloading = $output?->status === OutputStatus::Downloading
                 && $output->updated_at->lessThan($downloadingCutoff);
             if ($generation->status->isTerminal() || $output === null || ! ($pending || $downloading)) {
@@ -142,7 +141,7 @@ final class GenerationStateMachine
 
             $output->forceFill([
                 'status' => OutputStatus::Pending,
-                'next_attempt_at' => null,
+                'next_attempt_at' => now(),
             ])->save();
             DB::afterCommit(fn () => DownloadOutputJob::dispatch($output->id));
 
@@ -256,6 +255,7 @@ final class GenerationStateMachine
                         $output->forceFill([
                             'generation_id' => $generation->id, 'generation_job_id' => $fresh->id,
                             'index' => $index, 'source_url' => $ref->url, 'status' => OutputStatus::Pending,
+                            'next_attempt_at' => now(),
                         ])->save();
                     }
                     if ($output->status === OutputStatus::Pending) {
@@ -407,7 +407,7 @@ final class GenerationStateMachine
     private function rearmOutputLocked(GenerationOutput $output): void
     {
         if (in_array($output->status, [OutputStatus::Pending, OutputStatus::Failed], true)) {
-            $output->forceFill(['status' => OutputStatus::Pending, 'attempts' => 0, 'next_attempt_at' => null])->save();
+            $output->forceFill(['status' => OutputStatus::Pending, 'attempts' => 0, 'next_attempt_at' => now()])->save();
             DB::afterCommit(fn () => DownloadOutputJob::dispatch($output->id));
         }
     }
