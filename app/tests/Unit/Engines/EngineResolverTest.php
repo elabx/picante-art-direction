@@ -1,6 +1,7 @@
 <?php
 
 use App\Engines\EngineResolver;
+use App\Engines\FakeEngine;
 use App\Engines\Krea\KreaEngine;
 use App\Engines\KreaException;
 use App\Models\Brand;
@@ -49,4 +50,22 @@ it('provides worker-safe default execution snapshots through factories and pest 
         'bindings' => ['image' => null, 'prompt' => null],
     ])->and(snapshot())->toBe(GenerationFactory::snapshot())
         ->and(Generation::factory()->raw()['execution_snapshot'])->toBe(GenerationFactory::snapshot());
+});
+
+it('resolves the studio engine from the configured studio key', function (): void {
+    config()->set('media.krea.key', 'studio-key');
+
+    expect(app(EngineResolver::class)->forStudio())->toBeInstanceOf(KreaEngine::class);
+});
+
+it('refuses a studio engine without a key', function (): void {
+    config()->set('media.krea.key', null);
+
+    expect(fn () => app(EngineResolver::class)->forStudio())->toThrow(KreaException::class);
+});
+
+it('returns the fake engine for the studio when it is bound', function (): void {
+    fakeEngine();
+
+    expect(app(EngineResolver::class)->forStudio())->toBeInstanceOf(FakeEngine::class);
 });

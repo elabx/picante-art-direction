@@ -7,7 +7,6 @@ use App\Engines\KreaException;
 use App\Enums\FieldRole;
 use App\Enums\FieldVisibility;
 use App\Enums\InputType;
-use App\Models\Campaign;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
 use Illuminate\Support\Facades\DB;
@@ -23,23 +22,15 @@ final class PipelineSchemaSync
     public function sync(Pipeline $pipeline): Pipeline
     {
         $providerRef = $pipeline->provider_ref;
-        $campaignId = $pipeline->campaign_id;
-        $brandId = $pipeline->campaign->brand_id;
-        $schema = $this->engines
-            ->forBrand($pipeline->campaign->brand)
-            ->describe($providerRef);
+        $schema = $this->engines->forStudio()->describe($providerRef);
 
-        $locked = DB::transaction(function () use ($brandId, $campaignId, $pipeline, $providerRef, $schema): Pipeline {
-            $campaign = Campaign::query()->lockForUpdate()->findOrFail($campaignId);
+        $locked = DB::transaction(function () use ($pipeline, $providerRef, $schema): Pipeline {
             $current = Pipeline::query()->lockForUpdate()->findOrFail($pipeline->getKey());
 
-            if ($campaign->brand_id !== $brandId
-                || $current->campaign_id !== $campaign->id
-                || $current->provider_ref !== $providerRef) {
+            if ($current->provider_ref !== $providerRef) {
                 throw new KreaException('La configuración del flujo cambió; vuelve a sincronizar.');
             }
 
-            $wasActive = $current->is_active;
             $isInitialSync = $current->schema_fetched_at === null && $current->input_schema === null;
             $inputSchema = $schema->inputSchema;
             $properties = is_array($inputSchema['properties'] ?? null) ? $inputSchema['properties'] : [];
@@ -101,10 +92,10 @@ final class PipelineSchemaSync
             }
 
             $errors = $this->readiness->evaluate($current->refresh());
-            $current->forceFill(['readiness_errors' => $errors])->save();
-
-            if ($wasActive && $errors !== []) {
-                $this->activation->deactivate($current);
+            if ($errors !== []) {
+                $this->activation->markNotReady($current, $errors);
+            } else {
+                $current->forceFill(['readiness_errors' => []])->save();
             }
 
             return $current;

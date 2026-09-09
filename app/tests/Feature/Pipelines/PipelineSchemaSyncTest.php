@@ -5,6 +5,8 @@ use App\Enums\FieldRole;
 use App\Enums\FieldVisibility;
 use App\Enums\InputType;
 use App\Enums\PipelineKind;
+use App\Models\Brand;
+use App\Models\Campaign;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
 use App\Services\Pipelines\PipelineSchemaSync;
@@ -51,8 +53,10 @@ it('flags changed and newly required fields, then deactivates an invalid default
     $engine = fakeEngine()->withSchema('v', $initialSchema);
     $sync = app(PipelineSchemaSync::class);
     $sync->sync($pipeline);
-    $pipeline->refresh()->update(['is_active' => true, 'readiness_errors' => []]);
-    $pipeline->campaign->update(['default_pipeline_id' => $pipeline->id]);
+    $pipeline->refresh()->update(['is_ready' => true, 'readiness_errors' => []]);
+    $campaign = Campaign::factory()->create();
+    attachPipeline($campaign, $pipeline);
+    $campaign->update(['default_pipeline_id' => $pipeline->id]);
     $engine->withSchema('v', $updatedSchema);
 
     $sync->sync($pipeline->fresh());
@@ -62,8 +66,8 @@ it('flags changed and newly required fields, then deactivates an invalid default
         ->and($pipeline->fields()->where('name', 'describe_la_escena')->first())
         ->needs_configuration->toBeTrue()
         ->input_type->toBe(InputType::Integer)
-        ->and($pipeline->is_active)->toBeFalse()
-        ->and($pipeline->campaign->fresh()->default_pipeline_id)->toBeNull()
+        ->and($pipeline->is_ready)->toBeFalse()
+        ->and($campaign->fresh()->default_pipeline_id)->toBeNull()
         ->and(collect($pipeline->readiness_errors)->contains(fn (string $error): bool => str_contains($error, 'revisa su configuración')))->toBeTrue();
 });
 
@@ -233,4 +237,31 @@ it('leaves the pipeline and its fields untouched when fetching fails', function 
     expect($pipeline->fresh()->config_revision)->toBe(1)
         ->and($pipeline->fresh()->input_schema)->toBeNull()
         ->and($field->fresh()->stale)->toBeFalse();
+});
+
+it('syncs with the studio key and never touches the brand key', function (): void {
+    $brand = Brand::factory()->create(['krea_api_key' => 'brand-key']);
+    $campaign = Campaign::factory()->for($brand)->create();
+    $pipeline = attachPipeline($campaign, Pipeline::factory()->ready()->create());
+    fakeEngine()->withSchema($pipeline->provider_ref, ['properties' => ['prompt' => ['type' => 'string']]]);
+
+    $synced = app(PipelineSchemaSync::class)->sync($pipeline);
+
+    expect($synced->fields()->count())->toBe(1)->and($synced->is_ready)->toBeTrue();
+});
+
+it('drops readiness in every campaign when a resync introduces errors', function (): void {
+    $first = Campaign::factory()->create();
+    $second = Campaign::factory()->create();
+    $pipeline = readyGenerator($first);
+    attachPipeline($second, $pipeline);
+    $first->update(['default_pipeline_id' => $pipeline->id]);
+    fakeEngine()->withSchema($pipeline->provider_ref, ['properties' => ['new' => ['type' => 'object']]]);
+
+    app(PipelineSchemaSync::class)->sync($pipeline);
+
+    expect($pipeline->fresh()->is_ready)->toBeFalse()
+        ->and($first->fresh()->default_pipeline_id)->toBeNull()
+        ->and($first->activeGenerators()->count())->toBe(0)
+        ->and($second->activeGenerators()->count())->toBe(0);
 });
