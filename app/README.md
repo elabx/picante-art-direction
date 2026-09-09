@@ -1,6 +1,6 @@
 # Muse Media Ops
 
-Herramienta interna para configurar flujos de imagen por marca y campaña, generar piezas, editar versiones y consultar la galería. Laravel 12, Filament 5, Livewire 4, Tailwind CSS 4.1+ y PHP 8.5. La aplicación vive en `app/`; ejecuta los comandos siguientes desde la raíz del repositorio con Docker y DDEV disponibles.
+Herramienta interna para configurar un catálogo de apps de imagen compartido por el estudio y asignarlas a campañas, generar piezas, editar versiones y consultar la galería. Laravel 12, Filament 5, Livewire 4, Tailwind CSS 4.1+ y PHP 8.5. La aplicación vive en `app/`; ejecuta los comandos siguientes desde la raíz del repositorio con Docker y DDEV disponibles.
 
 ## Desarrollo local
 
@@ -85,13 +85,16 @@ Mantén valores reales en el archivo local ignorado o en los secretos del entorn
 | `FAKE_ENGINE` | `1` para simulación exclusivamente con `APP_ENV=local`; `false` en Cloud. |
 | `LOG_CHANNEL`, `LOG_LEVEL` | Cloud: `stderr`, `warning`. No incluyas claves, data URLs, entradas completas ni URLs firmadas en logs. |
 
-## Añadir y configurar un pipeline
+## Añadir y configurar apps del catálogo
 
-1. Como Art Director, crea una marca, configura su clave si corresponde y usa «Probar conexión». En modo fake la comprobación es simulada.
-2. Crea una campaña y añade sus pipelines con tipo `generator`, `editor` o `upscaler` y la referencia de versión del node app.
-3. Actualiza el esquema. Configura tipo, etiqueta, visibilidad, rol y valores fijos de cada campo; las imágenes fijas se cargan al almacenamiento privado. Resuelve los campos pendientes o incompatibles antes de activar.
-4. El editor requiere exactamente un rol de imagen y uno de prompt; el upscaler requiere un rol de imagen y ningún prompt. Configura los demás campos obligatorios como ocultos con valores fijos. El editor recibe la pieza y la instrucción desde el visor; el upscaler recibe la pieza y, si el esquema lo permite, dimensiones o factor calculados.
-5. Activa el pipeline cuando esté listo y selecciona el generador predeterminado de la campaña. Asigna el editor a la marca para que pueda generar y consultar sus piezas.
+1. Como Art Director, crea una marca y una campaña. Las generaciones resuelven la clave de la marca o la del estudio; la sincronización de esquemas usa siempre `KREA_API_KEY` del estudio.
+2. Abre **Catálogo de apps** y crea una app con tipo `generator`, `editor` o `upscaler`, nombre y referencia de versión del node app. Al agregarla se valida el ID y se consulta su esquema automáticamente; si la consulta falla, la entrada no se guarda. También puedes sembrar entradas con `ddev artisan db:seed --class=PipelineCatalogSeeder --no-interaction` usando las variables `KREA_TEST_APP_ID_GENERATOR`, `_EDITOR`, `_UPSCALER`, `_SKECHERS` e `_INVIERNO` de `.env`. El seeder no llama a Krea ni modifica la configuración de entradas existentes; omite IDs vacíos o repetidos.
+3. Para apps sembradas o para volver a consultar el esquema más adelante, pulsa **Actualizar esquema**. Configura tipo, etiqueta, visibilidad, rol y valores fijos de cada campo. Esta configuración se comparte entre todas las campañas; las imágenes fijas se guardan en almacenamiento privado bajo `catalog/`, sin marca.
+4. El editor requiere exactamente un rol de imagen y uno de prompt; el upscaler requiere un rol de imagen y ningún prompt. Configura los demás campos obligatorios como ocultos con valores fijos. La app queda disponible automáticamente cuando el esquema y los campos son válidos; resuelve los errores que se indiquen.
+5. En la campaña abre **Apps → Asignar app**, elige una app lista y su orden. Se permiten varios generadores, como máximo un editor y un upscaler. Selecciona un **Generador por defecto** entre los generadores listos asignados. Asigna el usuario editor a la marca.
+6. **Quitar** desasigna la app y limpia el default si corresponde; los resultados históricos siguen disponibles. Si al actualizar el esquema o guardar campos la configuración deja de ser válida, la app desaparece del panel editor de todas las campañas y se limpian sus defaults. Al corregirla vuelve a estar disponible automáticamente. Para cambiar campos, usa **Abrir en catálogo**.
+
+El editor y el upscaler provisional comparten actualmente un ID; deja `KREA_TEST_APP_ID_UPSCALER` vacío hasta disponer de una referencia distinta, porque cada par motor/referencia identifica una única app.
 
 Referencias seleccionadas para esta entrega:
 
@@ -111,8 +114,8 @@ Muse Media Ops targets Laravel Cloud with `app/` as the application root, manage
 
 Run the Redis worker on a dedicated Worker cluster with `php artisan queue:work redis --timeout=150 --tries=1`; the application keeps `retry_after=420` and job budgets of 90/60/120 seconds. Use `CLOUDFRONT_PRIVATE_KEY_BASE64` for a Cloud-injected signing secret, or `CLOUDFRONT_PRIVATE_KEY_PATH` where every replica has a provisioned PEM. The base64 value takes precedence and invalid keys fail closed. Enable Cloud's scheduler on one selected cluster and verify shared Redis locks there. Cloud Flex's 90-second shutdown grace requires separate worker shutdown validation; it is not a fixed runtime cap.
 
-The real local MinIO 15 MiB upload/preview/download server flow passed in Task 24 (36 assertions, 65,028,096-byte peak under a 256 MiB PHP limit). Local fake-engine, Livewire, queue, viewer, gallery, and download tests provide server-side integration evidence. They do not establish a completed browser walkthrough or real Krea qualification. CUA was unavailable at the last browser check; visual validation remains pending.
+The real local MinIO 15 MiB upload/preview/download server flow passed in Task 24 (36 assertions, 65,028,096-byte peak under a 256 MiB PHP limit). Local fake-engine, Livewire, queue, viewer, gallery, and download tests provide server-side integration evidence. They do not establish a completed browser walkthrough or real Krea qualification. See the [catalog acceptance notes](../docs/superpowers/research/2026-09-09-catalog-acceptance.md) for the partial browser check and remaining verification.
 
-The full manual walkthrough remains: brand/key and connection → campaign → three pipelines → schema refresh/configuration/activation → editor login → generate/wait → viewer → edit → 4K → gallery filters → download. Run the local rehearsal with `FAKE_ENGINE=1`; real execution requires a separately authorized Gate B run with its fresh key and spend ceiling. The fake engine's 1024 × 768 demo mockups deliberately cannot qualify 4K.
+The full manual walkthrough remains: brand/key and connection → catalog apps with automatic schema loading → field configuration → campaign assignment → editor login → generate/wait → viewer → edit → 4K → gallery filters → download. Run the local rehearsal with `FAKE_ENGINE=1`; real execution requires a separately authorized Gate B run with its fresh key and spend ceiling. The fake engine's 1024 × 768 demo mockups deliberately cannot qualify 4K.
 
 Browser rendering and expiry checks, AWS/Cloud staging, memory sizing, worker shutdown, remote scheduler/retention, and CI deployment gating remain pending; see the checklist for exact evidence and owner checks. No remote deployment or real Krea execution was performed.

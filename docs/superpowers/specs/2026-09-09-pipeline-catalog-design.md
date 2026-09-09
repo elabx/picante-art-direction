@@ -1,8 +1,12 @@
 # Pipeline catalog — design
 
 **Date:** 2026-09-09
-**Status:** approved in conversation; implementation plan at `../plans/2026-09-09-pipeline-catalog.md`. Approved (options: studio-level catalog, rewrite original migrations, assignment equals activation, field configuration lives only in the catalog). Implementation to be executed with Codex.
+**Status:** Tasks 1–9 implemented on 2026-09-09; Task 10 automated verification passed, browser acceptance and historical deletion decision pending. See [acceptance notes](../research/2026-09-09-catalog-acceptance.md).
 **Builds on:** [Slice 1 design](2026-09-04-muse-media-ops-slice-1-design.md) §5 (pipelines) and §7 (data model).
+
+## Approved UX update — 2026-09-09
+
+The user removed the manual readiness step during implementation. Creating an app in the catalog validates its reference and fetches its schema automatically. Successful schema sync and field saves set `is_ready` from configuration validation; errors clear readiness and campaign defaults, and fixing the configuration restores availability automatically. The UI has no "Marcar lista" / "Marcar no lista" actions; its status label is "Disponible". The refresh action is labeled "Actualizar esquema". The seeder still never calls Krea and leaves new entries unavailable until their schema is fetched. These decisions supersede the manual readiness actions described below.
 
 ## 1. Purpose
 
