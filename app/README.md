@@ -21,7 +21,7 @@ ddev launch
 ddev exec bash -c 'cd /var/www/html/app && npm run dev'
 ```
 
-El panel de administración está en `/admin`; el panel editor, en `/app`. Para una instalación existente usa `ddev artisan migrate --no-interaction`, sin volver a ejecutar los seeders. Para compilar los assets usa `ddev exec bash -c 'cd /var/www/html/app && npm run build'`. El comando abreviado `ddev npm` no está disponible en este entorno; usa siempre la ruta explícita de `app/`.
+El panel de administración está en `/picante`; el panel editor, en `/app`. Para una instalación existente usa `ddev artisan migrate --no-interaction`, sin volver a ejecutar los seeders. Para compilar los assets usa `ddev exec bash -c 'cd /var/www/html/app && npm run build'`. El comando abreviado `ddev npm` no está disponible en este entorno; usa siempre la ruta explícita de `app/`.
 
 Para trabajar sin gasto de proveedor, establece **`APP_ENV=local` y `FAKE_ENGINE=1`** en la configuración local. Después de cambiar variables o código del worker:
 

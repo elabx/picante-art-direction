@@ -13,10 +13,20 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
+use Livewire\Attributes\On;
 
 class EditCampaign extends EditRecord
 {
     protected static string $resource = CampaignResource::class;
+
+    #[On('campaign-apps-updated')]
+    public function refreshAppChoices(): void
+    {
+        $default = $this->data['default_pipeline_id'] ?? null;
+        if (filled($default) && ! $this->getRecord()->activeGenerators()->whereKey($default)->exists()) {
+            $this->data['default_pipeline_id'] = null;
+        }
+    }
 
     protected function getHeaderActions(): array
     {

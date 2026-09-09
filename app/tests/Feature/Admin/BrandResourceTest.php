@@ -114,7 +114,7 @@ it('renders Spanish labels for brand fields under the Spanish locale', function 
 it('denies editors direct access to brand resource forms', function (): void {
     $this->actingAs(User::factory()->editor()->create());
 
-    $this->get('/admin/brands')->assertForbidden();
+    $this->get('/picante/brands')->assertForbidden();
 });
 
 it('denies a direct create call after an art director role is revoked', function (): void {

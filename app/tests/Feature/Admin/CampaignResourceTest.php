@@ -58,7 +58,7 @@ it('denies direct admin and manager calls after role revocation', function (): v
     $component = Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class]);
     $user->update(['role' => 'editor']);
     $component->call('mountAction', 'assign', [], ['table' => true])->assertForbidden();
-    $this->get('/admin/campaigns')->assertForbidden();
+    $this->get('/picante/campaigns')->assertForbidden();
     expect($campaign->pipelines()->count())->toBe(0);
 });
 
@@ -84,6 +84,7 @@ it('assigns a ready catalog app with an order and lists only unassigned ready ap
     expect(array_keys($options))->toBe([$ready->id]);
 
     $component->setActionData(['pipeline_id' => $ready->id, 'sort_order' => 2])->callMountedAction()->assertHasNoActionErrors()->assertNotified();
+    $component->assertDispatched('campaign-apps-updated');
     expect($campaign->pipelines()->pluck('pipelines.id')->all())->toBe([$assigned->id, $ready->id]);
 });
 
@@ -111,6 +112,7 @@ it('reorders and removes assignments without deleting the catalog entry', functi
     $component->assertTableColumnStateSet('pivot.sort_order', 5, $pipeline);
 
     $component->callAction(TestAction::make('remove')->table($pipeline))->assertNotified();
+    $component->assertDispatched('campaign-apps-updated');
     expect($campaign->pipelines()->count())->toBe(0)
         ->and($campaign->fresh()->default_pipeline_id)->toBeNull()
         ->and(Pipeline::query()->whereKey($pipeline->id)->exists())->toBeTrue();
@@ -126,4 +128,18 @@ it('does not offer create, edit fields, or refresh from the campaign', function 
         ->assertTableActionDoesNotExist('refresh')
         ->assertTableActionExists('openCatalog')
         ->assertSee('Apps');
+});
+
+it('refreshes default generator choices after assignments change without discarding campaign edits', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $campaign = Campaign::factory()->create();
+    $page = Livewire::test(EditCampaign::class, ['record' => $campaign->id])->set('data.description', 'Draft kept');
+    $pipeline = readyGenerator($campaign);
+
+    $page->dispatch('campaign-apps-updated')->assertSee($pipeline->label)
+        ->assertSet('data.description', 'Draft kept')
+        ->set('data.default_pipeline_id', $pipeline->id);
+    $campaign->pipelines()->detach($pipeline);
+    $page->dispatch('campaign-apps-updated')->assertSet('data.default_pipeline_id', null)
+        ->assertSet('data.description', 'Draft kept');
 });

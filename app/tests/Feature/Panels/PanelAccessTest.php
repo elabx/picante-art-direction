@@ -11,8 +11,8 @@ it('lets art directors into admin only and editors into app only', function (): 
     $brand = Brand::factory()->create();
     $brand->users()->attach($editor);
 
-    $this->actingAs($artDirector)->get('/admin')->assertOk();
-    $this->actingAs($editor)->get('/admin')->assertForbidden();
+    $this->actingAs($artDirector)->get('/picante')->assertOk();
+    $this->actingAs($editor)->get('/picante')->assertForbidden();
     $this->actingAs($editor)->get("/app/{$brand->slug}")->assertOk();
     $this->actingAs($artDirector)->get("/app/{$brand->slug}")->assertForbidden();
 });

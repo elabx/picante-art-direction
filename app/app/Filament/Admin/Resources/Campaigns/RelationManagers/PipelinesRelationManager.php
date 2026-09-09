@@ -56,7 +56,7 @@ class PipelinesRelationManager extends RelationManager
                 ->schema([
                     Select::make('pipeline_id')->label('App')->required()->searchable()
                         ->options(fn (): array => $this->assignableOptions())
-                        ->helperText('Solo aparecen apps listas que aún no están asignadas.'),
+                        ->helperText('Solo aparecen apps disponibles que aún no están asignadas.'),
                     TextInput::make('sort_order')->label('Orden')->integer()->minValue(0)->default(0)->required(),
                 ])
                 ->action(function (array $data): void {
@@ -70,6 +70,7 @@ class PipelinesRelationManager extends RelationManager
                         $this->failAssign(Arr::flatten($exception->errors()));
                     }
                     Notification::make()->success()->title('App asignada.')->send();
+                    $this->dispatch('campaign-apps-updated');
                 }),
         ])->recordActions([
             Action::make('reorder')->label('Cambiar orden')
@@ -87,6 +88,7 @@ class PipelinesRelationManager extends RelationManager
                 ->action(function (Pipeline $record): void {
                     app(CampaignPipelineAssignment::class)->remove($this->getOwnerRecord(), $record);
                     Notification::make()->success()->title('App quitada de la campaña.')->send();
+                    $this->dispatch('campaign-apps-updated');
                 }),
         ]);
     }

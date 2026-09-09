@@ -26,7 +26,7 @@ class AdminPanelProvider extends PanelProvider
         return $panel
             ->default()
             ->id('admin')
-            ->path('admin')
+            ->path('picante')
             ->login()
             ->brandName('Media Ops · Estudio')
             ->colors([

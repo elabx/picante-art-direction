@@ -11,6 +11,6 @@ it('renders Spanish resource headings and create actions', function (string $pat
         ->assertDontSeeText('Brands')
         ->assertDontSeeText('Users');
 })->with([
-    'brands' => ['/admin/brands', 'Marcas', 'Crear marca'],
-    'users' => ['/admin/users', 'Usuarios', 'Crear usuario'],
+    'brands' => ['/picante/brands', 'Marcas', 'Crear marca'],
+    'users' => ['/picante/users', 'Usuarios', 'Crear usuario'],
 ]);
