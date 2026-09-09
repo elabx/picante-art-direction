@@ -42,7 +42,7 @@ it('returns one matching replacement even after the original completes and pipel
 
     $a = app(RestartGeneration::class)->confirmRestart($user, $g, $request);
     $g->forceFill(['status' => 'completed', 'retryable' => false])->save();
-    $g->pipeline->update(['is_active' => false, 'provider_ref' => 'changed']);
+    $g->pipeline->update(['is_ready' => false, 'provider_ref' => 'changed']);
     $b = app(RestartGeneration::class)->confirmRestart($user, $g, $request);
 
     expect($a->id)->toBe($b->id)
@@ -57,7 +57,7 @@ it('recovers all completed jobs on the original even with an inactive pipeline',
     $engine = fakeEngine()->setJob('j1', new JobObservation('completed', 'done', null, ['urls' => ['https://cdn.test/a.png']], null));
     [$user, $g] = restartContext(['failure_reason' => 'poll_timeout', 'submitted_at' => now()->subHour()]);
     GenerationJob::factory()->for($g)->create(['provider_job_id' => 'j1']);
-    $g->pipeline->update(['is_active' => false]);
+    $g->pipeline->update(['is_ready' => false]);
 
     $result = app(RestartGeneration::class)->confirmRestart($user, $g, (string) Str::uuid());
 
@@ -93,7 +93,7 @@ it('rearms accepted work with a fresh window after soft deletion and preserves a
     $failed = GenerationOutput::factory()->for($g)->for($job, 'job')->create(['index' => 0, 'status' => 'failed', 'attempts' => 3]);
     $active = GenerationOutput::factory()->for($g)->for($job, 'job')->create(['index' => 1, 'status' => 'downloading', 'attempts' => 1]);
     $stored = GenerationOutput::factory()->for($g)->for($job, 'job')->create(['index' => 2, 'status' => 'stored', 'attempts' => 1]);
-    $g->pipeline->update(['is_active' => false]);
+    $g->pipeline->update(['is_ready' => false]);
     $g->campaign->delete();
 
     app(RestartGeneration::class)->checkStatus($user, $g);
@@ -205,7 +205,7 @@ it('blocks new executions for unavailable campaigns or pipelines', function (str
     if ($case === 'campaign') {
         $g->campaign->delete();
     } else {
-        $g->pipeline->update($case === 'inactive' ? ['is_active' => false] : ['readiness_errors' => ['missing field']]);
+        $g->pipeline->update($case === 'inactive' ? ['is_ready' => false] : ['is_ready' => false, 'readiness_errors' => ['missing field']]);
     }
 
     expect(fn () => app(RestartGeneration::class)->confirmRestart($user, $g, (string) Str::uuid()))->toThrow(ValidationException::class);

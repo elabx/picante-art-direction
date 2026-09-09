@@ -305,7 +305,7 @@ it('retains previous pieces when all generators are inactive and escapes campaig
     $campaign->update(['name' => '<script>alert(1)</script>']);
     $generation = Generation::factory()->for($campaign)->create(['status' => 'completed']);
     $piece = Piece::factory()->for($generation)->create();
-    $generation->pipeline->update(['is_active' => false]);
+    $generation->pipeline->update(['is_ready' => false]);
 
     Livewire::actingAs($editor)->test(Generator::class, ['campaign' => $campaign->slug])
         ->assertSee('Esta campaña no tiene generador configurado.')->assertSee(route('media.piece', $piece), false)
@@ -330,7 +330,7 @@ it('retains results and safely blocks submission when the selected generator bec
     $page = Livewire::actingAs($editor)->test(Generator::class, ['campaign' => $campaign->slug])
         ->fillForm(['inputs.describe_la_escena' => 'sin enviar']);
     $requestId = $page->get('requestId');
-    $pipeline->update(['is_active' => false]);
+    $pipeline->update(['is_ready' => false]);
 
     $page->call('refreshResults')->assertSee('Esta campaña no tiene generador configurado.')
         ->assertSee(route('media.piece', $piece), false)->assertDontSee('Generar serie')

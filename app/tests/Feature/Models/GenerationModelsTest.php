@@ -56,14 +56,14 @@ it('builds a coherent default generation output and piece graph', function () {
         ->and($piece->output->generation_id)->toBe($piece->generation_id)
         ->and($piece->output->job->generation_id)->toBe($piece->generation_id)
         ->and($piece->output->piece->id)->toBe($piece->id)
-        ->and($piece->generation->pipeline->campaign_id)->toBe($piece->campaign_id);
+        ->and($piece->generation->pipeline->campaigns()->whereKey($piece->campaign_id)->exists())->toBeTrue();
 });
 
-it('uses a supplied pipeline campaign for a generation', function () {
+it('attaches a supplied catalog pipeline to the generation campaign', function () {
     $pipeline = Pipeline::factory()->create();
     $generation = Generation::factory()->for($pipeline)->create();
 
-    expect($generation->campaign_id)->toBe($pipeline->campaign_id);
+    expect($pipeline->campaigns()->whereKey($generation->campaign_id)->exists())->toBeTrue();
 });
 
 it('uses a supplied output generation and campaign for a piece', function () {

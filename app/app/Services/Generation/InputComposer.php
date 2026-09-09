@@ -6,6 +6,7 @@ use App\Enums\FieldRole;
 use App\Enums\FieldVisibility;
 use App\Enums\InputType;
 use App\Enums\PipelineKind;
+use App\Models\Brand;
 use App\Models\Piece;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
@@ -34,6 +35,7 @@ final class InputComposer
         ?Piece $sourcePiece = null,
         ?string $instruction = null,
         ?User $user = null,
+        ?Brand $brand = null,
     ): array {
         /** @var Collection<int, PipelineField> $fields */
         $fields = $pipeline->fields()->where('stale', false)->get();
@@ -99,11 +101,11 @@ final class InputComposer
                     $uploadId = $this->visibleUploadId($field, $value);
                     $actor = $user ?? auth()->user();
 
-                    if (! $actor instanceof User) {
+                    if (! $actor instanceof User || $brand === null) {
                         throw new AuthorizationException;
                     }
 
-                    $this->inputUploads->authorize($uploadId, $pipeline->campaign->brand, $actor);
+                    $this->inputUploads->authorize($uploadId, $brand, $actor);
                     $inputs[$field->name] = ['__upload' => $uploadId];
                     $this->appendUploadId($uploadIds, $uploadId);
 

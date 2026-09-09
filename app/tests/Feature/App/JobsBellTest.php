@@ -29,7 +29,7 @@ it('uses a notification slide-over and separates active work from recent results
 
 it('counts and marks only the displayed terminal jobs for this user and tenant', function (): void {
     [$editor, , $campaign] = editorInCampaign();
-    $pipeline = Pipeline::factory()->for($campaign)->create();
+    $pipeline = attachPipeline($campaign, Pipeline::factory()->create());
     $old = Generation::factory()->for($pipeline)->for($editor)->create(['status' => 'failed', 'created_at' => now()->subDay()]);
     $displayed = Generation::factory()->count(29)->for($pipeline)->for($editor)->create(['status' => 'completed']);
     $running = Generation::factory()->for($pipeline)->for($editor)->create(['status' => 'processing']);
@@ -55,7 +55,7 @@ it('keeps older active work visible ahead of a full page of recent results', fun
 
 it('renders job summaries statuses and at most three completed thumbnails', function (): void {
     [$editor, , $campaign] = editorInCampaign();
-    $pipeline = Pipeline::factory()->for($campaign)->create();
+    $pipeline = attachPipeline($campaign, Pipeline::factory()->create());
     $completed = Generation::factory()->for($pipeline)->for($editor)->create(['status' => 'completed', 'execution_snapshot' => snapshot(['inputs' => ['foto' => ['__upload' => 99]], 'bindings' => ['image' => 'foto']])]);
     $pieces = Piece::factory()->count(4)->for($completed)->create();
     Generation::factory()->for($pipeline)->for($editor)->create(['kind' => 'edit', 'status' => 'downloading', 'execution_snapshot' => snapshot(['inputs' => ['q' => 'quita la caja'], 'bindings' => ['prompt' => 'q']])]);

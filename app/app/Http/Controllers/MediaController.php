@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Brand;
 use App\Models\Campaign;
+use App\Models\Generation;
 use App\Models\InputUpload;
 use App\Models\Piece;
 use App\Models\Pipeline;
@@ -37,13 +38,13 @@ class MediaController
         $user = $this->user();
 
         if ($user->isArtDirector()) {
-            abort_unless($this->isFixedUpload($upload), 403);
-        } elseif ($upload->user_id === $user->id) {
+            abort_unless($this->isFixedUpload($upload) || $this->isSnapshotUpload($upload), 403);
+        } elseif ($upload->brand_id !== null && $upload->user_id === $user->id) {
             $brand = Brand::query()->findOrFail($upload->brand_id);
             $this->authorizeBrand($brand->id);
             app(InputUploadService::class)->authorize($upload->id, $brand, $user);
         } else {
-            abort_unless($this->isFixedUpload($upload, $user), 403);
+            abort_unless($this->isFixedUpload($upload, $user) || $this->isSnapshotUpload($upload, $user), 403);
         }
 
         return $this->redirect(
@@ -87,10 +88,21 @@ class MediaController
     {
         return Pipeline::query()
             ->whereHas('inputUploads', fn ($query) => $query->whereKey($upload->id))
-            ->whereHas('campaign', fn ($query) => $query
-                ->where('brand_id', $upload->brand_id)
-                ->when($user, fn ($query) => $query->whereHas('brand.users', fn ($query) => $query->whereKey($user->id))))
+            ->when($user, fn ($query) => $query->whereHas('campaigns.brand.users', fn ($query) => $query->whereKey($user->id)))
             ->exists();
+    }
+
+    private function isSnapshotUpload(InputUpload $upload, ?User $user = null): bool
+    {
+        if ($upload->brand_id !== null) {
+            return false;
+        }
+
+        return Generation::query()
+            ->whereHas('inputUploads', fn ($query) => $query->whereKey($upload->id))
+            ->when($user, fn ($query) => $query->whereHas('campaign.brand.users', fn ($query) => $query->whereKey($user->id)))
+            ->get(['execution_snapshot'])
+            ->contains(fn (Generation $generation): bool => in_array(['__upload' => $upload->id], $generation->execution_snapshot['inputs'] ?? [], true));
     }
 
     private function redirect(string $disk, ?string $path, Request $request, string $filename): RedirectResponse

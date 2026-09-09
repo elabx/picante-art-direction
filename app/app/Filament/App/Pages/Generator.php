@@ -282,9 +282,9 @@ class Generator extends Page
         if ($this->pipelineId === null) {
             return null;
         }
-        $pipeline = $campaign->pipelines()->where('kind', PipelineKind::Generator)->find($this->pipelineId) ?? abort(404);
+        $pipeline = $campaign->pipelines()->where('pipelines.kind', PipelineKind::Generator)->find($this->pipelineId) ?? abort(404);
 
-        return $pipeline->is_active ? $pipeline : null;
+        return $pipeline->is_ready ? $pipeline : null;
     }
 
     private function generation(int $id): Generation

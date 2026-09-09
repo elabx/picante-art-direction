@@ -159,13 +159,10 @@ final class RestartGeneration
                 try {
                     $this->uploads->authorize($id, $campaign->brand, $user);
                 } catch (AuthorizationException $exception) {
-                    if ($pipeline === null || $pipeline->campaign_id !== $campaign->id) {
+                    if ($pipeline === null || ! $campaign->pipelines()->whereKey($pipeline->id)->exists()) {
                         throw $exception;
                     }
-                    $upload = $this->uploads->authorizeForPipeline($id, $pipeline);
-                    if ($upload->brand_id !== $campaign->brand_id) {
-                        throw new AuthorizationException;
-                    }
+                    $this->uploads->authorizeForPipeline($id, $pipeline);
                 }
                 $ids[] = $id;
 
@@ -213,7 +210,7 @@ final class RestartGeneration
             GenerationKind::Edit => [PipelineKind::Editor, 'editor'],
             GenerationKind::Upscale => [PipelineKind::Upscaler, 'upscaler'],
         };
-        if ($pipeline === null || $pipeline->campaign_id !== $campaign->id || $pipeline->kind !== $expected || ! $pipeline->isReady()) {
+        if ($pipeline === null || ! $campaign->pipelines()->whereKey($pipeline->id)->exists() || $pipeline->kind !== $expected || ! $pipeline->isReady()) {
             $this->invalid("Esta campaña no tiene {$label} configurado.");
         }
     }

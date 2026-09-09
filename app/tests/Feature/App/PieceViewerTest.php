@@ -21,7 +21,7 @@ afterEach(fn () => Livewire::flushState());
 
 function viewerPipeline(Campaign $campaign, string $kind): Pipeline
 {
-    $pipeline = Pipeline::factory()->for($campaign)->create(['kind' => $kind, 'is_active' => true, 'readiness_errors' => [], 'input_schema' => ['properties' => []]]);
+    $pipeline = attachPipeline($campaign, Pipeline::factory()->create(['kind' => $kind, 'is_ready' => true, 'readiness_errors' => [], 'input_schema' => ['properties' => []]]));
     PipelineField::factory()->for($pipeline)->create(['name' => 'foto', 'input_type' => 'image', 'role' => 'image', 'required' => true]);
     if ($kind === 'editor') {
         PipelineField::factory()->for($pipeline)->create(['name' => 'q', 'input_type' => 'string', 'role' => 'prompt', 'required' => true]);
@@ -122,7 +122,7 @@ it('renders escaped originating labels and only authorized upload previews', fun
     $own = InputUpload::factory()->for($brand)->for($editor)->create();
     $other = InputUpload::factory()->for($brand)->create();
     $fixed = InputUpload::factory()->for($brand)->create();
-    $pipeline = Pipeline::factory()->for($campaign)->create();
+    $pipeline = attachPipeline($campaign, Pipeline::factory()->create());
     $pipeline->inputUploads()->attach($fixed);
     $generation = Generation::factory()->for($pipeline)->create(['execution_snapshot' => snapshot(['inputs' => ['q' => '<script>alert(1)</script>', 'own' => ['__upload' => $own->id], 'other' => ['__upload' => $other->id], 'fixed' => ['__upload' => $fixed->id]], 'labels' => ['q' => 'La escena']])]);
     $piece = Piece::factory()->for($generation)->create();
@@ -231,11 +231,26 @@ it('retains the viewed piece when command pipelines become inactive', function (
     $edit = viewerPipeline($campaign, 'editor');
     $upscale = viewerPipeline($campaign, 'upscaler');
     $viewer = Livewire::actingAs($editor)->test(PieceViewer::class)->dispatch('open-piece', pieceId: $piece->id)->set('instruction', 'quita la caja');
-    $edit->update(['is_active' => false]);
-    $upscale->update(['is_active' => false]);
+    $edit->update(['is_ready' => false]);
+    $upscale->update(['is_ready' => false]);
     $viewer->dispatch('jobs-updated')->assertSet('pieceId', $piece->id)->assertSet('instruction', 'quita la caja')
         ->assertSee('Esta campaña no tiene editor configurado.')->assertSee('Esta campaña no tiene upscaler configurado.')
         ->assertActionDisabled('upscale')->call('applyEdit')->assertHasErrors('generation');
     expect(Generation::whereIn('kind', ['edit', 'upscale'])->count())->toBe(0);
     Queue::assertNothingPushed();
+});
+
+it('previews retained catalog snapshot inputs after the campaign removes the app', function (): void {
+    [$editor, $brand, $campaign] = editorInCampaign();
+    $pipeline = readyGenerator($campaign);
+    $upload = InputUpload::factory()->catalog()->create();
+    $generation = Generation::factory()->for($campaign)->for($pipeline)->create([
+        'execution_snapshot' => snapshot(['inputs' => ['reference' => ['__upload' => $upload->id]]]),
+    ]);
+    $generation->inputUploads()->attach($upload);
+    $piece = Piece::factory()->for($generation)->create();
+    $campaign->pipelines()->detach($pipeline);
+
+    Livewire::actingAs($editor)->test(PieceViewer::class)->dispatch('open-piece', pieceId: $piece->id)
+        ->assertSee(route('media.upload', $upload), false);
 });

@@ -2,12 +2,15 @@
 
 use App\Models\Brand;
 use App\Models\Campaign;
+use App\Models\Generation;
 use App\Models\InputUpload;
 use App\Models\Piece;
 use App\Models\Pipeline;
 use App\Models\User;
 use App\Services\Media\SignedUrlProvider;
+use Filament\Facades\Filament;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 
 beforeEach(function (): void {
     $this->travelTo(Carbon::parse('2026-09-07 12:17:23'));
@@ -79,7 +82,7 @@ it('only allows editors to access their own upload unless it is a fixed pipeline
     $brand->users()->attach($editor);
     $owned = InputUpload::factory()->for($brand)->for($editor)->create(['storage_path' => 'inputs/owned.png']);
     $colleagueUpload = InputUpload::factory()->for($brand)->for($colleague)->create(['storage_path' => 'inputs/colleague.png']);
-    $pipeline = Pipeline::factory()->create(['campaign_id' => Campaign::factory()->for($brand)->create()->id]);
+    $pipeline = attachPipeline(Campaign::factory()->for($brand)->create(), Pipeline::factory()->create());
     $pipeline->inputUploads()->attach($colleagueUpload);
 
     $this->actingAs($editor)->get(route('media.upload', $owned))->assertRedirect('https://signed.example/inputs/inputs/owned.png');
@@ -88,17 +91,17 @@ it('only allows editors to access their own upload unless it is a fixed pipeline
     $this->actingAs($editor)->get(route('media.upload', $colleagueUpload))->assertForbidden();
 });
 
-it('forbids a cross-brand pipeline link from exposing a colleague upload', function (): void {
+it('allows a catalog fixed input shared with an assigned campaign across brands', function (): void {
     $editor = User::factory()->editor()->create();
     $colleague = User::factory()->editor()->create();
     $uploadBrand = Brand::factory()->create();
     $pipelineBrand = Brand::factory()->create();
     $pipelineBrand->users()->attach($editor);
     $upload = InputUpload::factory()->for($uploadBrand)->for($colleague)->create(['storage_path' => 'inputs/cross-brand.png']);
-    $pipeline = Pipeline::factory()->create(['campaign_id' => Campaign::factory()->for($pipelineBrand)->create()->id]);
+    $pipeline = attachPipeline(Campaign::factory()->for($pipelineBrand)->create(), Pipeline::factory()->create());
     $pipeline->inputUploads()->attach($upload);
 
-    $this->actingAs($editor)->get(route('media.upload', $upload))->assertForbidden();
+    $this->actingAs($editor)->get(route('media.upload', $upload))->assertRedirect();
 });
 
 it('uses the requested attachment disposition and the exact ten-minute expiry for downloads', function (): void {
@@ -113,4 +116,40 @@ it('uses the requested attachment disposition and the exact ten-minute expiry fo
 
     $this->actingAs($editor)->get(route('media.piece', ['piece' => $piece, 'download' => 1]))
         ->assertRedirect('https://signed.example/download');
+});
+
+it('serves a catalog fixed image to editors of any brand whose campaign uses the app and denies others', function (): void {
+    [$editor, $brand, $campaign] = editorInCampaign();
+    $pipeline = readyGenerator($campaign);
+    $upload = InputUpload::factory()->catalog()->create(['finalized_at' => now()]);
+    $pipeline->inputUploads()->attach($upload->id);
+    Storage::fake('inputs');
+    Storage::disk('inputs')->put($upload->storage_path, 'x');
+
+    $this->get(route('media.upload', $upload))->assertRedirect();
+
+    $stranger = User::factory()->editor()->create();
+    $otherBrand = Brand::factory()->create();
+    $otherBrand->users()->attach($stranger);
+    $this->actingAs($stranger);
+    Filament::setTenant($otherBrand);
+    $this->get(route('media.upload', $upload))->assertForbidden();
+
+    $this->actingAs(User::factory()->artDirector()->create());
+    $this->get(route('media.upload', $upload))->assertRedirect();
+});
+
+it('keeps snapshot catalog images available after removing the app and its fixed input', function (): void {
+    [$editor, $brand, $campaign] = editorInCampaign();
+    $pipeline = readyGenerator($campaign);
+    $upload = InputUpload::factory()->catalog()->create();
+    $generation = Generation::factory()->for($campaign)->for($pipeline)->create([
+        'execution_snapshot' => snapshot(['inputs' => ['reference' => ['__upload' => $upload->id]]]),
+    ]);
+    $generation->inputUploads()->attach($upload);
+    $campaign->pipelines()->detach($pipeline);
+
+    $this->get(route('media.upload', $upload))->assertRedirect();
+    $this->actingAs(User::factory()->editor()->create())->get(route('media.upload', $upload))->assertForbidden();
+    $this->actingAs(User::factory()->artDirector()->create())->get(route('media.upload', $upload))->assertRedirect();
 });

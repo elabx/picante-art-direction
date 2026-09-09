@@ -28,10 +28,10 @@ function configuredSourcePipeline(Campaign $campaign, PipelineKind $kind): Pipel
     if ($kind === PipelineKind::Editor) {
         $properties['prompt'] = ['type' => 'string'];
     }
-    $pipeline = Pipeline::factory()->for($campaign)->create([
-        'kind' => $kind, 'is_active' => true, 'readiness_errors' => [],
+    $pipeline = attachPipeline($campaign, Pipeline::factory()->create([
+        'kind' => $kind, 'is_ready' => true, 'readiness_errors' => [],
         'input_schema' => ['type' => 'object', 'properties' => $properties],
-    ]);
+    ]));
     foreach ($properties as $name => $schema) {
         PipelineField::factory()->for($pipeline)->create([
             'name' => $name, 'source_schema' => $schema,
@@ -104,7 +104,7 @@ it('replays an authorized series request after its pipeline configuration change
     $pipeline = readyGenerator($campaign);
     $requestId = (string) Str::uuid();
     $original = app(CreateGeneration::class)->series($user, $campaign, $pipeline, ['describe_la_escena' => 'x'], $requestId, 3);
-    $pipeline->update(['is_active' => false, 'config_revision' => 4]);
+    $pipeline->update(['is_ready' => false, 'config_revision' => 4]);
 
     $replayed = app(CreateGeneration::class)->series($user, $campaign, $pipeline, ['describe_la_escena' => 'x'], $requestId, 3);
 
@@ -141,7 +141,7 @@ it('rechecks a matching request id inside the transaction before validating chan
             'retryable' => false,
         ])->save();
         DB::table('pipelines')->where('id', $pipeline->id)->update([
-            'is_active' => false,
+            'is_ready' => false,
             'config_revision' => 4,
         ]);
     });
@@ -238,14 +238,13 @@ it('selects the active source pipeline when an older inactive pipeline exists', 
     $sourceGeneration = Generation::factory()->for($campaign)->create();
     $sourceOutput = GenerationOutput::factory()->for($sourceGeneration)->create();
     $source = Piece::factory()->for($sourceGeneration)->for($sourceOutput, 'output')->create();
-    Pipeline::factory()->for($campaign)->create([
+    attachPipeline($campaign, Pipeline::factory()->create([
         'kind' => PipelineKind::Editor,
-        'is_active' => false,
+        'is_ready' => false,
         'readiness_errors' => [],
-        'sort_order' => 0,
-    ]);
+    ]));
     $active = configuredSourcePipeline($campaign, PipelineKind::Editor);
-    $active->update(['sort_order' => 1]);
+    $campaign->pipelines()->updateExistingPivot($active->id, ['sort_order' => 1]);
 
     $generation = app(CreateGeneration::class)->edit($user, $source, 'ajusta la luz', (string) Str::uuid());
 
@@ -264,15 +263,42 @@ it('replays a source request after the active pipeline is replaced', function ()
     $originalPipeline = configuredSourcePipeline($campaign, PipelineKind::Editor);
     $requestId = (string) Str::uuid();
     $original = app(CreateGeneration::class)->edit($user, $source, 'ajusta la luz', $requestId);
-    $originalPipeline->update(['is_active' => false]);
-    Pipeline::factory()->for($campaign)->create([
+    $originalPipeline->update(['is_ready' => false]);
+    attachPipeline($campaign, Pipeline::factory()->create([
         'kind' => PipelineKind::Editor,
-        'is_active' => true,
+        'is_ready' => true,
         'readiness_errors' => [],
-    ]);
+    ]));
 
     $replayed = app(CreateGeneration::class)->edit($user, $source, 'ajusta la luz', $requestId);
 
     expect($replayed->id)->toBe($original->id)
         ->and($replayed->pipeline_id)->toBe($originalPipeline->id);
+});
+
+function editorPipeline(bool $ready): Pipeline
+{
+    $pipeline = Pipeline::factory()->editor()->create([
+        'is_ready' => $ready,
+        'readiness_errors' => $ready ? [] : ['Un editor necesita exactamente una imagen y un prompt vinculados.'],
+        'input_schema' => ['properties' => ['image' => ['type' => 'string'], 'prompt' => ['type' => 'string']]],
+    ]);
+    PipelineField::factory()->for($pipeline)->create(['name' => 'image', 'input_type' => InputType::Image, 'role' => FieldRole::Image]);
+    PipelineField::factory()->for($pipeline)->create(['name' => 'prompt', 'role' => FieldRole::Prompt]);
+
+    return $pipeline;
+}
+
+it('uses the first assigned ready editor by order and ignores unassigned or not ready ones', function (): void {
+    [$editor, $brand, $campaign] = editorInCampaign();
+    fakeEngine();
+    $generator = readyGenerator($campaign);
+    $piece = Piece::factory()->for(Generation::factory()->for($campaign))->create();
+    $notReady = attachPipeline($campaign, editorPipeline(false), 0);
+    $ready = attachPipeline($campaign, editorPipeline(true), 1);
+    editorPipeline(true); // unassigned
+
+    $generation = app(CreateGeneration::class)->edit($editor, $piece, 'más luz', (string) Str::uuid());
+
+    expect($generation->pipeline_id)->toBe($ready->id);
 });

@@ -4,6 +4,7 @@ use App\Enums\FieldRole;
 use App\Enums\FieldVisibility;
 use App\Enums\InputType;
 use App\Enums\PipelineKind;
+use App\Models\Brand;
 use App\Models\InputUpload;
 use App\Models\Piece;
 use App\Models\Pipeline;
@@ -81,7 +82,7 @@ it('omits blank optional form values while preserving false', function (): void 
 
 it('composes a configured fixed upload reference and returns its unique id', function (): void {
     $pipeline = Pipeline::factory()->create(['input_schema' => ['properties' => []]]);
-    $upload = InputUpload::factory()->for($pipeline->campaign->brand)->create();
+    $upload = InputUpload::factory()->catalog()->create();
     $pipeline->inputUploads()->attach($upload);
     PipelineField::factory()->for($pipeline)->create([
         'name' => 'marca_de_agua',
@@ -143,15 +144,16 @@ it('converts only representable scalar values and round-trips JSON enum keys', f
 it('authorizes visible uploads with the explicit actor', function (): void {
     $user = User::factory()->editor()->create();
     $pipeline = Pipeline::factory()->create(['input_schema' => ['properties' => []]]);
+    $brand = Brand::factory()->create();
     $upload = InputUpload::factory()->create([
-        'brand_id' => $pipeline->campaign->brand_id,
+        'brand_id' => $brand->id,
         'user_id' => $user->id,
     ]);
     PipelineField::factory()->for($pipeline)->create(['name' => 'referencia', 'input_type' => InputType::Image, 'required' => true]);
 
     $composer = app(InputComposer::class);
 
-    expect($composer->compose($pipeline->refresh(), ['referencia' => $upload->id], null, null, $user))
+    expect($composer->compose($pipeline->refresh(), ['referencia' => $upload->id], null, null, $user, $brand))
         ->toMatchArray(['inputs' => ['referencia' => ['__upload' => $upload->id]], 'uploadIds' => [$upload->id]])
         ->and(fn (): array => $composer->compose($pipeline, ['referencia' => $upload->id]))
         ->toThrow(AuthorizationException::class);

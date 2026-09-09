@@ -269,9 +269,14 @@ class PieceViewer extends Component implements HasActions, HasSchemas
                     $inputs[] = ['label' => $label, 'url' => route('media.piece', $source)];
                 }
             } elseif (is_array($value) && isset($value['__upload']) && is_int($value['__upload'])) {
-                $upload = InputUpload::query()->where('brand_id', $this->tenant()->id)->find($value['__upload']);
-                if ($upload !== null && ($upload->user_id === $this->user()->id
-                    || ($generation->pipeline?->campaign_id === $piece->campaign_id && $generation->pipeline->inputUploads()->whereKey($upload->id)->exists()))) {
+                $upload = InputUpload::query()->find($value['__upload']);
+                $ownUpload = $upload !== null && $upload->brand_id === $this->tenant()->id && $upload->user_id === $this->user()->id;
+                $fixedUpload = $upload !== null && $generation->pipeline !== null
+                    && $generation->pipeline->campaigns()->whereKey($piece->campaign_id)->exists()
+                    && $generation->pipeline->inputUploads()->whereKey($upload->id)->exists();
+                $snapshotUpload = $upload !== null && $upload->brand_id === null
+                    && $generation->inputUploads()->whereKey($upload->id)->exists();
+                if ($ownUpload || $fixedUpload || $snapshotUpload) {
                     $inputs[] = ['label' => $label, 'url' => route('media.upload', $upload)];
                 }
             }

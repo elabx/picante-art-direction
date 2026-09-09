@@ -38,7 +38,7 @@ class GenerationFactory extends Factory
     public function configure(): static
     {
         return $this->afterMaking(function (Generation $generation): void {
-            $generation->campaign_id = $generation->pipeline->campaign_id;
+            $generation->pipeline->campaigns()->syncWithoutDetaching([$generation->campaign_id]);
         });
     }
 
@@ -50,10 +50,8 @@ class GenerationFactory extends Factory
     public function definition(): array
     {
         return [
-            'campaign_id' => Campaign::factory(),
-            'pipeline_id' => fn (array $attributes) => Pipeline::factory()->create([
-                'campaign_id' => $attributes['campaign_id'],
-            ])->id,
+            'pipeline_id' => Pipeline::factory(),
+            'campaign_id' => fn (array $attributes) => Pipeline::findOrFail($attributes['pipeline_id'])->campaigns()->first()?->id ?? Campaign::factory()->create()->id,
             'user_id' => User::factory(),
             'kind' => 'series',
             'parent_piece_id' => null,

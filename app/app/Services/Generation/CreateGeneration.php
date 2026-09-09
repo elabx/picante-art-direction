@@ -88,12 +88,9 @@ final class CreateGeneration
 
         $this->ensureCampaignAvailable($campaign);
 
-        $pipeline = Pipeline::query()
-            ->where('campaign_id', $campaign->id)
-            ->where('kind', $pipelineKind)
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('id')
+        $pipeline = $campaign->pipelines()
+            ->where('pipelines.kind', $pipelineKind)
+            ->where('pipelines.is_ready', true)
             ->first();
 
         if ($pipeline === null || ! $pipeline->isReady()) {
@@ -158,6 +155,7 @@ final class CreateGeneration
                     $persistedSource,
                     $instruction,
                     $user,
+                    $persistedCampaign->brand,
                 );
                 $generation = new Generation;
                 $this->uploads->retainForReference($composed['uploadIds']);
@@ -229,9 +227,9 @@ final class CreateGeneration
 
         if ($pipeline === null
             || $campaign === null
-            || $pipeline->campaign_id !== $campaign->id
             || $pipeline->kind !== $expected
-            || ! $pipeline->isReady()) {
+            || ! $pipeline->isReady()
+            || ! $campaign->pipelines()->whereKey($pipeline->id)->exists()) {
             $this->invalid("Esta campaña no tiene {$this->pipelineLabel($expected)} configurado.");
         }
     }
