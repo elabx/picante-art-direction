@@ -20,7 +20,7 @@ class CampaignsTable
             ->columns([
                 TextColumn::make('brand.name')->label('Marca'),
                 TextColumn::make('name')->label('Nombre')->searchable()->sortable(),
-                TextColumn::make('pipelines_count')->label('Flujos')->counts('pipelines'),
+                TextColumn::make('pipelines_count')->label('Apps')->counts('pipelines'),
                 TextColumn::make('pieces_count')->label('Piezas')->counts('pieces'),
             ])->filters([TrashedFilter::make()])->recordActions([EditAction::make()])
             ->toolbarActions([BulkActionGroup::make([DeleteBulkAction::make(), RestoreBulkAction::make()])]);

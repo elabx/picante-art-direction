@@ -9,52 +9,9 @@ use App\Models\Brand;
 use App\Models\Campaign;
 use App\Models\Generation;
 use App\Models\Pipeline;
-use App\Models\PipelineField;
 use App\Models\User;
 use Filament\Actions\Testing\TestAction;
-use Illuminate\Support\Facades\DB;
 use Livewire\Livewire;
-
-it('creates a pipeline through its campaign and fetches schema outside an action transaction', function (): void {
-    $this->actingAs(User::factory()->artDirector()->create());
-    $level = DB::transactionLevel();
-    fakeEngine()->withSchema('ver-1', ['type' => 'object', 'required' => ['describe_la_escena'], 'properties' => ['describe_la_escena' => ['type' => 'string']]], 'Creador')
-        ->duringDescribe(fn () => expect(DB::transactionLevel())->toBe($level));
-    $campaign = Campaign::factory()->create();
-
-    Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class])
-        ->callAction(TestAction::make('create')->table(), data: ['kind' => 'generator', 'label' => 'Creador', 'provider_ref' => 'ver-1', 'sort_order' => 1])
-        ->assertHasNoActionErrors();
-
-    $pipeline = $campaign->pipelines()->sole();
-    expect($pipeline->fields)->toHaveCount(1)->and($pipeline->is_active)->toBeFalse()->and($pipeline->readiness_errors)->toBe([]);
-});
-
-it('surfaces safe provider validation and leaves no pipeline after failed schema creation', function (): void {
-    $this->actingAs(User::factory()->artDirector()->create());
-    fakeEngine();
-    $campaign = Campaign::factory()->create();
-    Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class])
-        ->callAction(TestAction::make('create')->table(), data: ['kind' => 'generator', 'label' => 'X', 'provider_ref' => 'missing', 'sort_order' => 1])
-        ->assertHasActionErrors(['provider_ref']);
-    expect($campaign->pipelines()->count())->toBe(0)->and(PipelineField::count())->toBe(0);
-});
-
-it('activates a ready editor and refuses a second active editor', function (): void {
-    $this->actingAs(User::factory()->artDirector()->create());
-    $campaign = Campaign::factory()->create();
-    $pipelines = collect(range(1, 2))->map(function () use ($campaign): Pipeline {
-        $pipeline = Pipeline::factory()->for($campaign)->create(['kind' => 'editor', 'input_schema' => ['properties' => []]]);
-        PipelineField::factory()->for($pipeline)->create(['input_type' => 'image', 'role' => 'image']);
-        PipelineField::factory()->for($pipeline)->create(['role' => 'prompt']);
-
-        return $pipeline;
-    });
-    $component = Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class]);
-    $component->callAction(TestAction::make('activate')->table($pipelines[0]));
-    $component->callAction(TestAction::make('activate')->table($pipelines[1]))->assertNotified();
-    expect($pipelines[0]->fresh()->is_active)->toBeTrue()->and($pipelines[1]->fresh()->is_active)->toBeFalse();
-});
 
 it('creates campaigns and keeps their brand immutable while validating the default generator', function (): void {
     $this->actingAs(User::factory()->artDirector()->create());
@@ -100,7 +57,7 @@ it('denies direct admin and manager calls after role revocation', function (): v
     $campaign = Campaign::factory()->create();
     $component = Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class]);
     $user->update(['role' => 'editor']);
-    $component->call('mountAction', 'create', [], ['table' => true])->assertForbidden();
+    $component->call('mountAction', 'assign', [], ['table' => true])->assertForbidden();
     $this->get('/admin/campaigns')->assertForbidden();
     expect($campaign->pipelines()->count())->toBe(0);
 });
@@ -112,23 +69,61 @@ it('retains historical campaign access for accepted generations after soft delet
     expect($generation->fresh()->campaign?->id)->toBe($campaign->id);
 });
 
-it('refreshes a pipeline from its campaign and deactivates an invalid default', function (): void {
+it('assigns a ready catalog app with an order and lists only unassigned ready apps', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $campaign = Campaign::factory()->create();
+    $ready = Pipeline::factory()->generator()->ready()->create(['label' => 'Creador']);
+    $notReady = Pipeline::factory()->generator()->create(['label' => 'Pendiente']);
+    $assigned = readyGenerator($campaign);
+
+    $component = Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class]);
+    $component->mountAction(TestAction::make('assign')->table())
+        ->assertSchemaComponentExists('pipeline_id')
+        ->assertActionDataSet(['sort_order' => 0]);
+    $options = $component->instance()->assignableOptions();
+    expect(array_keys($options))->toBe([$ready->id]);
+
+    $component->setActionData(['pipeline_id' => $ready->id, 'sort_order' => 2])->callMountedAction()->assertHasNoActionErrors()->assertNotified();
+    expect($campaign->pipelines()->pluck('pipelines.id')->all())->toBe([$assigned->id, $ready->id]);
+});
+
+it('surfaces assignment rule violations on the select', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $campaign = Campaign::factory()->create();
+    attachPipeline($campaign, Pipeline::factory()->editor()->ready()->create());
+    $second = Pipeline::factory()->editor()->ready()->create();
+
+    Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class])
+        ->callAction(TestAction::make('assign')->table(), data: ['pipeline_id' => $second->id, 'sort_order' => 0])
+        ->assertHasActionErrors(['pipeline_id']);
+    expect($campaign->pipelines()->count())->toBe(1);
+});
+
+it('reorders and removes assignments without deleting the catalog entry', function (): void {
     $this->actingAs(User::factory()->artDirector()->create());
     $campaign = Campaign::factory()->create();
     $pipeline = readyGenerator($campaign);
     $campaign->update(['default_pipeline_id' => $pipeline->id]);
-    fakeEngine()->withSchema($pipeline->provider_ref, ['properties' => ['new' => ['type' => 'object']]]);
-    Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class])
-        ->callAction(TestAction::make('refresh')->table($pipeline))->assertNotified();
-    expect($pipeline->fresh()->is_active)->toBeFalse()->and($campaign->fresh()->default_pipeline_id)->toBeNull();
+    $component = Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class]);
+
+    $component->callAction(TestAction::make('reorder')->table($pipeline), data: ['sort_order' => 5])->assertHasNoActionErrors();
+    expect($campaign->pipelines()->first()?->pivot->sort_order)->toBe(5);
+    $component->assertTableColumnStateSet('pivot.sort_order', 5, $pipeline);
+
+    $component->callAction(TestAction::make('remove')->table($pipeline))->assertNotified();
+    expect($campaign->pipelines()->count())->toBe(0)
+        ->and($campaign->fresh()->default_pipeline_id)->toBeNull()
+        ->and(Pipeline::query()->whereKey($pipeline->id)->exists())->toBeTrue();
 });
 
-it('rejects malformed provider references before describing a schema', function (): void {
+it('does not offer create, edit fields, or refresh from the campaign', function (): void {
     $this->actingAs(User::factory()->artDirector()->create());
-    fakeEngine()->duringDescribe(fn () => test()->fail('Malformed provider reference reached the engine.'));
     $campaign = Campaign::factory()->create();
+    $pipeline = readyGenerator($campaign);
+
     Livewire::test(PipelinesRelationManager::class, ['ownerRecord' => $campaign, 'pageClass' => EditCampaign::class])
-        ->callAction(TestAction::make('create')->table(), data: ['kind' => 'generator', 'label' => 'X', 'provider_ref' => '<script>secret</script>', 'sort_order' => 0])
-        ->assertHasActionErrors(['provider_ref']);
-    expect($campaign->pipelines()->count())->toBe(0);
+        ->assertActionDoesNotExist(TestAction::make('create')->table())
+        ->assertTableActionDoesNotExist('refresh')
+        ->assertTableActionExists('openCatalog')
+        ->assertSee('Apps');
 });

@@ -34,7 +34,7 @@ class CampaignForm
             DatePicker::make('starts_on')->label('Fecha de inicio'),
             DatePicker::make('ends_on')->label('Fecha de fin')->afterOrEqual('starts_on'),
             Select::make('default_pipeline_id')->label('Generador por defecto')->hiddenOn('create')
-                ->options(fn (?Campaign $record): array => $record?->activeGenerators()->pluck('label', 'id')->all() ?? []),
+                ->options(fn (?Campaign $record): array => $record?->activeGenerators()->pluck('pipelines.label', 'pipelines.id')->all() ?? []),
         ]);
     }
 }
