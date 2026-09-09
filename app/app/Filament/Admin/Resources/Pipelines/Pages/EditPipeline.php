@@ -4,6 +4,7 @@ namespace App\Filament\Admin\Resources\Pipelines\Pages;
 
 use App\Filament\Admin\Resources\Pipelines\Actions\PipelineActions;
 use App\Filament\Admin\Resources\Pipelines\PipelineResource;
+use Filament\Actions\DeleteAction;
 use Filament\Resources\Pages\EditRecord;
 use Illuminate\Database\Eloquent\Model;
 use Livewire\Attributes\On;
@@ -16,7 +17,7 @@ class EditPipeline extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [PipelineActions::refresh(), PipelineActions::activate(), PipelineActions::deactivate()];
+        return [PipelineActions::refresh(), PipelineActions::markReady(), PipelineActions::markNotReady(), DeleteAction::make()->label('Eliminar')];
     }
 
     protected function getFormActions(): array

@@ -117,3 +117,65 @@ it('renders fields in nonstale order with Spanish read-only schema columns', fun
         ->assertTableColumnExists('source_schema', fn ($column): bool => $column->getLabel() === 'Esquema de origen')
         ->assertDontSee('<script>schema()</script>', false);
 });
+
+use App\Filament\Admin\Resources\Pipelines\Pages\ListPipelines;
+
+it('lists the catalog with readiness and campaign counts', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $campaign = Campaign::factory()->create();
+    $used = readyGenerator($campaign);
+    $idle = Pipeline::factory()->editor()->create(['label' => 'Editor libre']);
+
+    Livewire::test(ListPipelines::class)
+        ->assertCanSeeTableRecords([$used, $idle])
+        ->assertTableColumnStateSet('campaigns_count', 1, $used)
+        ->assertTableColumnStateSet('campaigns_count', 0, $idle)
+        ->assertSee('Catálogo de apps');
+});
+
+it('creates a catalog entry, syncs its schema, and rejects a duplicate provider reference', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    fakeEngine()->withSchema('app-1', ['properties' => ['prompt' => ['type' => 'string']]]);
+
+    Livewire::test(ListPipelines::class)
+        ->callAction('create', data: ['kind' => 'generator', 'label' => 'Creador', 'provider_ref' => 'app-1'])
+        ->assertHasNoActionErrors();
+    $pipeline = Pipeline::query()->sole();
+    expect($pipeline->fields()->count())->toBe(1)->and($pipeline->is_ready)->toBeFalse();
+
+    Livewire::test(ListPipelines::class)
+        ->callAction('create', data: ['kind' => 'editor', 'label' => 'Otro', 'provider_ref' => 'app-1'])
+        ->assertHasActionErrors(['provider_ref']);
+    expect(Pipeline::query()->count())->toBe(1);
+});
+
+it('leaves no catalog entry when the schema fetch fails', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    fakeEngine();
+
+    Livewire::test(ListPipelines::class)
+        ->callAction('create', data: ['kind' => 'generator', 'label' => 'Roto', 'provider_ref' => 'app-x'])
+        ->assertHasActionErrors(['provider_ref']);
+    expect(Pipeline::query()->count())->toBe(0);
+});
+
+it('deletes only unassigned catalog entries', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $campaign = Campaign::factory()->create();
+    $used = readyGenerator($campaign);
+    $idle = Pipeline::factory()->create();
+
+    Livewire::test(ListPipelines::class)
+        ->assertTableActionHidden('delete', $used)
+        ->callTableAction('delete', $idle);
+    expect(Pipeline::query()->whereKey($idle->id)->exists())->toBeFalse()
+        ->and(Pipeline::query()->whereKey($used->id)->exists())->toBeTrue();
+});
+
+it('marks a catalog entry not ready from the header', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $pipeline = readyGenerator(Campaign::factory()->create());
+
+    Livewire::test(EditPipeline::class, ['record' => $pipeline->id])->callAction('markNotReady')->assertNotified();
+    expect($pipeline->fresh()->is_ready)->toBeFalse();
+});

@@ -7,6 +7,8 @@ use App\Models\Pipeline;
 use App\Services\Pipelines\PipelineActivation;
 use App\Services\Pipelines\PipelineSchemaSync;
 use Filament\Actions\Action;
+use Filament\Forms\Components\Select;
+use Filament\Forms\Components\TextInput;
 use Filament\Notifications\Notification;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Gate;
@@ -16,6 +18,19 @@ use Livewire\Component;
 final class PipelineActions
 {
     public const KINDS = ['generator' => 'Generador', 'editor' => 'Editor', 'upscaler' => 'Upscaler'];
+
+    /** @return list<\Filament\Schemas\Components\Component> */
+    public static function createSchema(): array
+    {
+        return [
+            Select::make('kind')->label('Tipo')->options(self::KINDS)->required(),
+            TextInput::make('label')->label('Nombre')->required()->maxLength(255),
+            TextInput::make('provider_ref')->label('Referencia del proveedor')->required()->maxLength(255)
+                ->regex('/\A[A-Za-z0-9_.:\/-]+\z/')
+                ->unique(table: Pipeline::class, column: 'provider_ref')
+                ->validationMessages(['unique' => 'Esta referencia ya está en el catálogo.']),
+        ];
+    }
 
     public static function refresh(): Action
     {
@@ -32,31 +47,32 @@ final class PipelineActions
             });
     }
 
-    public static function activate(): Action
+    public static function markReady(): Action
     {
-        return Action::make('activate')->label('Activar')->authorize('update')
-            ->visible(fn (Pipeline $record): bool => ! $record->is_active)
+        return Action::make('markReady')->label('Marcar lista')->authorize('update')
+            ->visible(fn (Pipeline $record): bool => ! $record->is_ready)
             ->action(function (Pipeline $record, Component $livewire): void {
                 Gate::authorize('update', $record);
                 try {
-                    app(PipelineActivation::class)->activate($record);
-                    Notification::make()->success()->title('Flujo activado.')->send();
+                    app(PipelineActivation::class)->markReady($record);
+                    Notification::make()->success()->title('App marcada como lista.')->send();
                     $livewire->dispatch('pipeline-updated');
                 } catch (ValidationException $exception) {
-                    Notification::make()->danger()->title('No se pudo activar el flujo.')
+                    Notification::make()->danger()->title('No se pudo marcar la app como lista.')
                         ->body(implode("\n", Arr::flatten($exception->errors())))->send();
                 }
             });
     }
 
-    public static function deactivate(): Action
+    public static function markNotReady(): Action
     {
-        return Action::make('deactivate')->label('Desactivar')->authorize('update')
-            ->visible(fn (Pipeline $record): bool => $record->is_active)
+        return Action::make('markNotReady')->label('Marcar no lista')->authorize('update')->requiresConfirmation()
+            ->modalDescription('La app desaparecerá del panel de editores en todas las campañas que la usan.')
+            ->visible(fn (Pipeline $record): bool => $record->is_ready)
             ->action(function (Pipeline $record, Component $livewire): void {
                 Gate::authorize('update', $record);
-                app(PipelineActivation::class)->deactivate($record);
-                Notification::make()->success()->title('Flujo desactivado.')->send();
+                app(PipelineActivation::class)->markNotReady($record);
+                Notification::make()->success()->title('App marcada como no lista.')->send();
                 $livewire->dispatch('pipeline-updated');
             });
     }

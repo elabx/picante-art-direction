@@ -2,14 +2,17 @@
 
 namespace App\Filament\Admin\Resources\Pipelines;
 
-use App\Filament\Admin\Resources\Campaigns\CampaignResource;
 use App\Filament\Admin\Resources\Pipelines\Pages\EditPipeline;
+use App\Filament\Admin\Resources\Pipelines\Pages\ListPipelines;
 use App\Filament\Admin\Resources\Pipelines\RelationManagers\FieldsRelationManager;
 use App\Filament\Admin\Resources\Pipelines\Schemas\PipelineForm;
+use App\Filament\Admin\Resources\Pipelines\Tables\PipelinesTable;
 use App\Models\Pipeline;
+use BackedEnum;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
-use Illuminate\Database\Eloquent\Model;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Table;
 
 class PipelineResource extends Resource
 {
@@ -17,11 +20,15 @@ class PipelineResource extends Resource
 
     protected static ?string $recordTitleAttribute = 'label';
 
-    protected static ?string $modelLabel = 'flujo';
+    protected static ?string $modelLabel = 'app del catálogo';
 
-    protected static ?string $pluralModelLabel = 'Flujos';
+    protected static ?string $pluralModelLabel = 'Catálogo de apps';
 
-    protected static bool $shouldRegisterNavigation = false;
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedSquares2x2;
+
+    protected static ?string $navigationLabel = 'Catálogo de apps';
+
+    protected static ?int $navigationSort = 3;
 
     protected static bool $isGloballySearchable = false;
 
@@ -35,13 +42,13 @@ class PipelineResource extends Resource
         return [FieldsRelationManager::class];
     }
 
-    public static function getIndexUrl(array $parameters = [], bool $isAbsolute = true, ?string $panel = null, ?Model $tenant = null, bool $shouldGuessMissingParameters = false): string
+    public static function table(Table $table): Table
     {
-        return CampaignResource::getUrl('index', $parameters, $isAbsolute, $panel, $tenant, $shouldGuessMissingParameters);
+        return PipelinesTable::configure($table);
     }
 
     public static function getPages(): array
     {
-        return ['edit' => EditPipeline::route('/{record}/edit')];
+        return ['index' => ListPipelines::route('/'), 'edit' => EditPipeline::route('/{record}/edit')];
     }
 }
