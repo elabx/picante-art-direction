@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             ArtDirectorSeeder::class,
+            PipelineCatalogSeeder::class,
         ]);
 
         User::factory()->create([

@@ -17,6 +17,13 @@ return [
     'krea' => [
         'base_url' => env('KREA_BASE_URL', 'https://api.krea.ai'),
         'key' => env('KREA_API_KEY'),
+        'test_apps' => [
+            'generator' => env('KREA_TEST_APP_ID_GENERATOR'),
+            'editor' => env('KREA_TEST_APP_ID_EDITOR'),
+            'upscaler' => env('KREA_TEST_APP_ID_UPSCALER'),
+            'skechers' => env('KREA_TEST_APP_ID_SKECHERS'),
+            'invierno' => env('KREA_TEST_APP_ID_INVIERNO'),
+        ],
         'fixture_path' => base_path('tests/Fixtures/krea'),
     ],
 ];
