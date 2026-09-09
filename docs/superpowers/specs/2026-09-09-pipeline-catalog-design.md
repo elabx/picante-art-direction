@@ -1,7 +1,7 @@
 # Pipeline catalog — design
 
 **Date:** 2026-09-09
-**Status:** approved in conversation (options: studio-level catalog, rewrite original migrations, assignment equals activation, field configuration lives only in the catalog). Implementation to be executed with Codex.
+**Status:** approved in conversation; implementation plan at `../plans/2026-09-09-pipeline-catalog.md`. Approved (options: studio-level catalog, rewrite original migrations, assignment equals activation, field configuration lives only in the catalog). Implementation to be executed with Codex.
 **Builds on:** [Slice 1 design](2026-09-04-muse-media-ops-slice-1-design.md) §5 (pipelines) and §7 (data model).
 
 ## 1. Purpose
@@ -62,14 +62,13 @@ Becomes nullable (rewrite `2026_09_07_155146_create_input_uploads_table.php`). F
 - `Pipeline::campaigns()` BelongsToMany with pivot `sort_order`. `Pipeline::isReady()` returns `is_ready`. Remove `campaign()`.
 - `Campaign::pipelines()` BelongsToMany with pivot `sort_order`, ordered by `sort_order`, then `pipelines.id`.
 - `Campaign::activeGenerators()`, `activeEditor()`, `activeUpscaler()` filter `kind` and `pipelines.is_ready = true` on that relation.
-- `Campaign::assignPipeline(Pipeline, int $sortOrder)` and `removePipeline(Pipeline)` are thin wrappers used by tests and admin; business rules live in the service below.
 - `PipelineFactory`: no campaign (today it has no states, only `definition()`); add states `generator()`, `editor()`, `upscaler()` and `ready()` (sets `is_ready = true`, `readiness_errors = []`). The `readyGenerator(Campaign)` helper in `tests/Pest.php` creates the entry with `ready()` and attaches it to the campaign through the pivot.
 
 ## 4. Services
 
 ### `PipelineReadiness`
 
-Unchanged.
+One change: the fixed-image check (`isLinkedImageUploadReference`) no longer compares the upload's brand with the campaign's brand, since catalog entries have no campaign. It only requires the upload to be linked through `pipeline_inputs`.
 
 ### `PipelineActivation` → readiness state
 
