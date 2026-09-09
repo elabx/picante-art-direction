@@ -43,7 +43,10 @@ it('completes a local demo through fresh worker engines and stores all four outp
     expect(Piece::count())->toBe(4);
     foreach ($generation->pieces()->get() as $piece) {
         Storage::disk('pieces')->assertExists($piece->storage_path);
+        expect([$piece->width, $piece->height])->toBe([1024, 768]);
+        expect($piece->is_4k)->toBeFalse();
     }
+    expect($generation->pieces->map(fn (Piece $piece): string => hash('sha256', Storage::disk('pieces')->get($piece->storage_path)))->unique())->toHaveCount(4);
     Http::assertSentCount(4);
     Http::assertNotSent(fn ($request): bool => ! str_starts_with($request->url(), 'https://muse-demo.invalid/'));
     Queue::assertPushed(PollGenerationJob::class, 1);

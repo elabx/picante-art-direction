@@ -33,8 +33,8 @@ class AppServiceProvider extends ServiceProvider
     {
         if ($this->app->environment('local') && config('media.fake_engine')) {
             Http::fake(function ($request) {
-                if ($request->method() === 'GET' && preg_match('~\\Ahttps://muse-demo\\.invalid/muse-demo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-3]\\.png\\z~', $request->url()) === 1) {
-                    return Http::response(file_get_contents(base_path('tests/Fixtures/images/tiny.png')), 200, ['Content-Type' => 'image/png']);
+                if ($request->method() === 'GET' && preg_match('~\\Ahttps://muse-demo\\.invalid/muse-demo-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/([0-3])\\.png\\z~', $request->url(), $matches) === 1) {
+                    return Http::response(file_get_contents(base_path("tests/Fixtures/images/demo-{$matches[1]}.png")), 200, ['Content-Type' => 'image/png']);
                 }
 
                 return null;

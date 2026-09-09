@@ -31,7 +31,7 @@ ddev exec supervisorctl restart 'webextradaemons:*'
 ddev exec supervisorctl status
 ```
 
-La simulación permite probar conexión, esquemas y trabajos con imágenes de prueba. Devuelve cuatro imágenes pequeñas por ejecución; no demuestra calidad visual ni salida 4K. La bandera solo funciona en `local`: no habilita simulación en staging, previews de Cloud ni producción. Los tests habilitan sus propios dobles explícitamente.
+La simulación permite probar conexión, esquemas y trabajos con imágenes de prueba. Devuelve cuatro mockups de producto distintos de 1024 × 768 por ejecución, rotulados como simulación local; no interpreta el prompt ni demuestra calidad del proveedor o salida 4K. La bandera solo funciona en `local`: no habilita simulación en staging, previews de Cloud ni producción. Los tests habilitan sus propios dobles explícitamente.
 
 ## Colas, scheduler y herramientas
 
@@ -113,6 +113,6 @@ Run the Redis worker on a dedicated Worker cluster with `php artisan queue:work 
 
 The real local MinIO 15 MiB upload/preview/download server flow passed in Task 24 (36 assertions, 65,028,096-byte peak under a 256 MiB PHP limit). Local fake-engine, Livewire, queue, viewer, gallery, and download tests provide server-side integration evidence. They do not establish a completed browser walkthrough or real Krea qualification. CUA was unavailable at the last browser check; visual validation remains pending.
 
-The full manual walkthrough remains: brand/key and connection → campaign → three pipelines → schema refresh/configuration/activation → editor login → generate/wait → viewer → edit → 4K → gallery filters → download. Run the local rehearsal with `FAKE_ENGINE=1`; real execution requires a separately authorized Gate B run with its fresh key and spend ceiling. The fake engine's tiny images deliberately cannot qualify 4K.
+The full manual walkthrough remains: brand/key and connection → campaign → three pipelines → schema refresh/configuration/activation → editor login → generate/wait → viewer → edit → 4K → gallery filters → download. Run the local rehearsal with `FAKE_ENGINE=1`; real execution requires a separately authorized Gate B run with its fresh key and spend ceiling. The fake engine's 1024 × 768 demo mockups deliberately cannot qualify 4K.
 
 Browser rendering and expiry checks, AWS/Cloud staging, memory sizing, worker shutdown, remote scheduler/retention, and CI deployment gating remain pending; see the checklist for exact evidence and owner checks. No remote deployment or real Krea execution was performed.

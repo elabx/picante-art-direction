@@ -105,7 +105,7 @@ class PieceViewer extends Component implements HasActions, HasSchemas
 
     public function upscaleAction(): Action
     {
-        return Action::make('upscale')->label('Entregar en 4K')
+        return Action::make('upscale')->label('Entregar en 4K')->color('gray')
             ->disabled(fn (): bool => $this->pieceId === null || ! $this->campaign()->activeUpscaler()?->isReady())
             ->requiresConfirmation()->modalHeading('Entregar en 4K')
             ->modalDescription('Se generará una versión con 3.840 píxeles en el lado mayor, conservando la proporción.')
