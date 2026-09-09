@@ -21,6 +21,16 @@ final class InputUploadService
 
     public function finalize(string $temporaryPath, Brand $brand, User $user): InputUpload
     {
+        return $this->store($temporaryPath, $brand, $user);
+    }
+
+    public function finalizeForCatalog(string $temporaryPath, User $user): InputUpload
+    {
+        return $this->store($temporaryPath, null, $user);
+    }
+
+    private function store(string $temporaryPath, ?Brand $brand, User $user): InputUpload
+    {
         $this->ensureTemporaryPathIsValid($temporaryPath);
 
         $disk = Storage::disk('inputs');
@@ -47,7 +57,7 @@ final class InputUploadService
             $this->throwInvalidImage();
         }
 
-        $storagePath = $brand->id.'/'.Str::uuid().'.'.$image['ext'];
+        $storagePath = ($brand?->id ?? 'catalog').'/'.Str::uuid().'.'.$image['ext'];
 
         try {
             if (! $disk->put($storagePath, $bytes)) {
@@ -63,7 +73,7 @@ final class InputUploadService
 
         try {
             $upload->forceFill([
-                'brand_id' => $brand->id,
+                'brand_id' => $brand?->id,
                 'user_id' => $user->id,
                 'storage_path' => $storagePath,
                 'mime_type' => $image['mime'],

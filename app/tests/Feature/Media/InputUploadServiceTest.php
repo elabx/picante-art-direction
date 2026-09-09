@@ -140,3 +140,17 @@ it('returns owned upload bytes and a MIME data URL', function (): void {
     expect($service->bytes($upload))->toBe('image bytes')
         ->and($service->dataUrl($upload))->toBe('data:image/png;base64,'.base64_encode('image bytes'));
 });
+
+it('finalizes catalog uploads under catalog/ without a brand', function (): void {
+    Storage::fake('inputs');
+    Storage::disk('inputs')->put('tmp/fixed.png', file_get_contents(base_path('tests/Fixtures/images/tiny.png')));
+    $user = User::factory()->artDirector()->create();
+
+    $upload = app(InputUploadService::class)->finalizeForCatalog('tmp/fixed.png', $user);
+
+    expect($upload->brand_id)->toBeNull()
+        ->and($upload->user_id)->toBe($user->id)
+        ->and($upload->storage_path)->toStartWith('catalog/')
+        ->and(Storage::disk('inputs')->exists($upload->storage_path))->toBeTrue()
+        ->and(Storage::disk('inputs')->exists('tmp/fixed.png'))->toBeFalse();
+});

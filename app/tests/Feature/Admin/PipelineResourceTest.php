@@ -44,7 +44,7 @@ it('invalidates active defaults and increments fresh revision once without accep
     $component->callAction(TestAction::make('edit')->table($field), data: ['has_fixed_value' => true, 'fixed_value' => 'hello', 'name' => 'forged', 'required' => false, 'source_schema' => ['type' => 'boolean']])->assertHasNoActionErrors();
     expect($field->fresh()->name)->toBe('describe_la_escena')->and($field->fresh()->required)->toBeTrue()
         ->and($field->fresh()->source_schema)->toBe(['type' => 'string'])
-        ->and($pipeline->fresh()->config_revision)->toBe(11)->and($pipeline->fresh()->is_active)->toBeFalse()
+        ->and($pipeline->fresh()->config_revision)->toBe(11)->and($pipeline->fresh()->is_ready)->toBeFalse()
         ->and($pipeline->fresh()->readiness_errors)->not->toBeEmpty()->and($campaign->fresh()->default_pipeline_id)->toBeNull();
 });
 
@@ -62,8 +62,8 @@ it('refreshes and activates from the pipeline header without exposing or saving 
     $pipeline = Pipeline::factory()->create(['input_schema' => ['private-marker' => true]]);
     fakeEngine()->withSchema($pipeline->provider_ref, ['properties' => ['prompt' => ['type' => 'string']]]);
     $component = Livewire::test(EditPipeline::class, ['record' => $pipeline->id])->assertDontSee('private-marker');
-    $component->callAction('refresh')->assertNotified()->callAction('activate')->assertNotified();
-    expect($pipeline->fresh()->is_active)->toBeTrue()->and($pipeline->fields()->count())->toBe(1);
+    $component->callAction('refresh')->assertNotified()->callAction('markReady')->assertNotified();
+    expect($pipeline->fresh()->is_ready)->toBeTrue()->and($pipeline->fields()->count())->toBe(1);
     $component->set('data.provider_ref', 'forged')->set('data.input_schema', ['forged' => true])->call('save');
     expect($pipeline->fresh()->provider_ref)->toBe($pipeline->provider_ref)->and($pipeline->fresh()->input_schema)->not->toHaveKey('forged');
 });
@@ -97,7 +97,7 @@ it('rejects another pipelines image path without changing the field or revision'
     $pipeline = Pipeline::factory()->create(['input_schema' => ['properties' => []]]);
     $field = PipelineField::factory()->for($pipeline)->create(['input_type' => 'image']);
     Storage::disk('inputs')->put('tmp/foreign.png', file_get_contents(base_path('tests/Fixtures/images/tiny.png')));
-    $foreign = app(InputUploadService::class)->finalize('tmp/foreign.png', $pipeline->campaign->brand, $user);
+    $foreign = app(InputUploadService::class)->finalizeForCatalog('tmp/foreign.png', $user);
     Livewire::test(FieldsRelationManager::class, ['ownerRecord' => $pipeline, 'pageClass' => EditPipeline::class])
         ->callAction(TestAction::make('edit')->table($field), data: ['has_fixed_value' => true, 'fixed_value' => [$foreign->storage_path]])
         ->assertHasActionErrors(['fixed_value']);
