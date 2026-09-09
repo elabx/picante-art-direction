@@ -91,12 +91,12 @@ final class PipelineFieldConfiguration
                 fn ($upload) => $current->inputUploads()->detach($upload->id),
             );
             $errors = $this->readiness->evaluate($current);
-            $current->update(['readiness_errors' => $errors, 'config_revision' => $current->config_revision + 1]);
+            $current->update(['readiness_errors' => $errors, 'is_ready' => $errors === [], 'config_revision' => $current->config_revision + 1]);
             if ($errors !== []) {
                 $this->activation->markNotReady($current, $errors);
             }
 
             return $field;
-        });
+        }, attempts: 3);
     }
 }

@@ -36,7 +36,7 @@ final class RestartGeneration
             [$fresh] = $this->context($user, $generation->id);
 
             return $this->state->rearm($fresh, now());
-        });
+        }, attempts: 3);
     }
 
     public function confirmRestart(User $user, Generation $original, string $restartRequestId): Generation
@@ -54,7 +54,7 @@ final class RestartGeneration
             }
 
             return [$fresh, $campaign, $existing];
-        });
+        }, attempts: 3);
         if ($existing !== null) {
             return $existing;
         }
@@ -85,14 +85,14 @@ final class RestartGeneration
                 $this->uploads->retainForReference($uploadIds);
 
                 return $this->state->replacement($fresh, $user->id, $restartRequestId, $uploadIds);
-            });
+            }, attempts: 3);
         } catch (QueryException $exception) {
             return DB::transaction(function () use ($user, $original, $restartRequestId, $exception): Generation {
                 [$fresh] = $this->context($user, $original->id);
                 $this->authorizeParent($fresh);
 
                 return $this->existing($user, $fresh, $restartRequestId) ?? throw $exception;
-            });
+            }, attempts: 3);
         }
     }
 

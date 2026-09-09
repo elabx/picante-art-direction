@@ -57,12 +57,12 @@ it('parses valid scalar JSON fixed values strictly and keeps other text', functi
     expect($field->fresh()->fixed_value)->toBe($expected);
 })->with([['null', null], ['false', false], ['0', 0], ['1.5', 1.5], ['"word"', 'word'], ['ordinary text', 'ordinary text']]);
 
-it('refreshes and activates from the pipeline header without exposing or saving raw schema state', function (): void {
+it('updates schema and automatically enables valid apps without exposing raw schema state', function (): void {
     $this->actingAs(User::factory()->artDirector()->create());
     $pipeline = Pipeline::factory()->create(['input_schema' => ['private-marker' => true]]);
     fakeEngine()->withSchema($pipeline->provider_ref, ['properties' => ['prompt' => ['type' => 'string']]]);
     $component = Livewire::test(EditPipeline::class, ['record' => $pipeline->id])->assertDontSee('private-marker');
-    $component->callAction('refresh')->assertNotified()->callAction('markReady')->assertNotified();
+    $component->callAction('refresh')->assertNotified();
     expect($pipeline->fresh()->is_ready)->toBeTrue()->and($pipeline->fields()->count())->toBe(1);
     $component->set('data.provider_ref', 'forged')->set('data.input_schema', ['forged' => true])->call('save');
     expect($pipeline->fresh()->provider_ref)->toBe($pipeline->provider_ref)->and($pipeline->fresh()->input_schema)->not->toHaveKey('forged');
@@ -141,7 +141,7 @@ it('creates a catalog entry, syncs its schema, and rejects a duplicate provider 
         ->callAction('create', data: ['kind' => 'generator', 'label' => 'Creador', 'provider_ref' => 'app-1'])
         ->assertHasNoActionErrors();
     $pipeline = Pipeline::query()->sole();
-    expect($pipeline->fields()->count())->toBe(1)->and($pipeline->is_ready)->toBeFalse();
+    expect($pipeline->fields()->count())->toBe(1)->and($pipeline->is_ready)->toBeTrue();
 
     Livewire::test(ListPipelines::class)
         ->callAction('create', data: ['kind' => 'editor', 'label' => 'Otro', 'provider_ref' => 'app-1'])
@@ -172,10 +172,35 @@ it('deletes only unassigned catalog entries', function (): void {
         ->and(Pipeline::query()->whereKey($used->id)->exists())->toBeTrue();
 });
 
-it('marks a catalog entry not ready from the header', function (): void {
+it('automatically disables an invalid app on schema update without manual readiness actions', function (): void {
     $this->actingAs(User::factory()->artDirector()->create());
     $pipeline = readyGenerator(Campaign::factory()->create());
+    fakeEngine()->withSchema($pipeline->provider_ref, ['properties' => ['unsupported' => ['type' => 'object']]]);
 
-    Livewire::test(EditPipeline::class, ['record' => $pipeline->id])->callAction('markNotReady')->assertNotified();
+    Livewire::test(EditPipeline::class, ['record' => $pipeline->id])
+        ->assertActionDoesNotExist('markReady')->assertActionDoesNotExist('markNotReady')
+        ->callAction('refresh')->assertNotified();
     expect($pipeline->fresh()->is_ready)->toBeFalse();
+});
+
+it('automatically restores availability after correcting a catalog field', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $campaign = Campaign::factory()->create();
+    $pipeline = readyGenerator($campaign);
+    $field = $pipeline->fields()->sole();
+    $component = Livewire::test(FieldsRelationManager::class, ['ownerRecord' => $pipeline, 'pageClass' => EditPipeline::class]);
+    $component->callAction(TestAction::make('edit')->table($field), data: ['visibility' => 'hidden'])->assertHasNoActionErrors();
+    expect($campaign->activeGenerators()->count())->toBe(0);
+
+    $component->callAction(TestAction::make('edit')->table($field), data: ['visibility' => 'visible'])->assertHasNoActionErrors();
+    expect($campaign->activeGenerators()->pluck('pipelines.id')->all())->toBe([$pipeline->id]);
+});
+
+it('does not offer deletion for apps assigned to archived campaigns', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $campaign = Campaign::factory()->create();
+    $pipeline = readyGenerator($campaign);
+    $campaign->delete();
+
+    Livewire::test(ListPipelines::class)->assertTableActionHidden('delete', $pipeline);
 });

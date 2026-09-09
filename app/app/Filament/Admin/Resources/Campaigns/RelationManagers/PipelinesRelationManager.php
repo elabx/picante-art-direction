@@ -48,7 +48,7 @@ class PipelinesRelationManager extends RelationManager
             TextColumn::make('label')->label('Nombre'),
             TextColumn::make('kind')->label('Tipo')->badge()->formatStateUsing(fn ($state): string => PipelineActions::KINDS[$state->value]),
             TextColumn::make('provider_ref')->label('Referencia del proveedor'),
-            IconColumn::make('is_ready')->label('Lista')->boolean()
+            IconColumn::make('is_ready')->label('Disponible')->boolean()
                 ->tooltip(fn (Pipeline $record): string => implode("\n", $record->readiness_errors ?? [])),
         ])->headerActions([
             Action::make('assign')->label('Asignar app')->modalHeading('Asignar app del catálogo')

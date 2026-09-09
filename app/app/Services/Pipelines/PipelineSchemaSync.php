@@ -95,11 +95,11 @@ final class PipelineSchemaSync
             if ($errors !== []) {
                 $this->activation->markNotReady($current, $errors);
             } else {
-                $current->forceFill(['readiness_errors' => []])->save();
+                $current->forceFill(['readiness_errors' => [], 'is_ready' => true])->save();
             }
 
             return $current;
-        });
+        }, attempts: 3);
 
         return $locked->refresh();
     }

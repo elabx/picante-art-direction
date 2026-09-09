@@ -29,7 +29,7 @@ class PipelinePolicy
 
     public function delete(User $user, Pipeline $record): bool
     {
-        return $user->fresh()?->isArtDirector() === true && $record->campaigns()->doesntExist();
+        return $user->fresh()?->isArtDirector() === true && $record->campaigns()->withTrashed()->doesntExist();
     }
 
     public function deleteAny(User $user): bool

@@ -146,6 +146,9 @@ class Generator extends Page
 
     public function updatedPipelineId(): void
     {
+        if ($this->pipelineId !== null) {
+            abort_unless($this->campaign()->pipelines()->where('pipelines.kind', PipelineKind::Generator)->whereKey($this->pipelineId)->exists(), 404);
+        }
         $pipeline = $this->pipeline();
         $this->formRevision = $pipeline?->config_revision;
         $this->resetValidation();
@@ -282,9 +285,9 @@ class Generator extends Page
         if ($this->pipelineId === null) {
             return null;
         }
-        $pipeline = $campaign->pipelines()->where('pipelines.kind', PipelineKind::Generator)->find($this->pipelineId) ?? abort(404);
+        $pipeline = $campaign->pipelines()->where('pipelines.kind', PipelineKind::Generator)->find($this->pipelineId);
 
-        return $pipeline->is_ready ? $pipeline : null;
+        return $pipeline?->is_ready ? $pipeline : null;
     }
 
     private function generation(int $id): Generation

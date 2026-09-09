@@ -51,6 +51,6 @@ class EditCampaign extends EditRecord
             }
 
             return $campaign->refresh();
-        });
+        }, attempts: 3);
     }
 }

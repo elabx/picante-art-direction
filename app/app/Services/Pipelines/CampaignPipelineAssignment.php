@@ -30,7 +30,7 @@ final class CampaignPipelineAssignment
             }
 
             $currentCampaign->pipelines()->attach($currentPipeline->id, ['sort_order' => max(0, $sortOrder)]);
-        });
+        }, attempts: 3);
     }
 
     public function remove(Campaign $campaign, Pipeline $pipeline): void
@@ -42,7 +42,7 @@ final class CampaignPipelineAssignment
             if ($currentCampaign->default_pipeline_id === $pipeline->getKey()) {
                 $currentCampaign->update(['default_pipeline_id' => null]);
             }
-        });
+        }, attempts: 3);
     }
 
     public function reorder(Campaign $campaign, Pipeline $pipeline, int $sortOrder): void
@@ -55,7 +55,7 @@ final class CampaignPipelineAssignment
             }
 
             $currentCampaign->pipelines()->updateExistingPivot($pipeline->getKey(), ['sort_order' => max(0, $sortOrder)]);
-        });
+        }, attempts: 3);
     }
 
     private function invalid(string $message): never

@@ -20,10 +20,14 @@ final class PipelineActivation
         $errors = DB::transaction(function () use ($pipeline): array {
             $current = Pipeline::query()->lockForUpdate()->findOrFail($pipeline->getKey());
             $errors = $this->readiness->evaluate($current);
-            $current->update(['readiness_errors' => $errors, 'is_ready' => $errors === []]);
+            if ($errors !== []) {
+                $this->markNotReady($current, $errors);
+            } else {
+                $current->update(['readiness_errors' => [], 'is_ready' => true]);
+            }
 
             return $errors;
-        });
+        }, attempts: 3);
 
         if ($errors !== []) {
             throw ValidationException::withMessages(['pipeline' => $errors]);
@@ -39,7 +43,7 @@ final class PipelineActivation
             $current = Pipeline::query()->lockForUpdate()->findOrFail($pipeline->getKey());
             $current->update(['is_ready' => false, 'readiness_errors' => $errors]);
             Campaign::query()->withTrashed()->where('default_pipeline_id', $current->id)->update(['default_pipeline_id' => null]);
-        });
+        }, attempts: 3);
     }
 
     public function setDefault(Campaign $campaign, Pipeline $pipeline): void
@@ -57,6 +61,6 @@ final class PipelineActivation
             }
 
             $currentCampaign->update(['default_pipeline_id' => $currentPipeline->id]);
-        });
+        }, attempts: 3);
     }
 }

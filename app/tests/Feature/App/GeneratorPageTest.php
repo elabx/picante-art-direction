@@ -347,3 +347,32 @@ it('retains results and safely blocks submission when the selected generator bec
             ->assertSee('Generar serie');
     }
 })->with([false, true]);
+
+it('retains results and safely blocks submission when the selected generator is unassigned', function (bool $hasAlternative): void {
+    Queue::fake();
+    [$editor, , $campaign] = editorInCampaign();
+    $pipeline = readyGenerator($campaign);
+    $campaign->update(['default_pipeline_id' => $pipeline->id]);
+    $alternative = $hasAlternative ? readyGenerator($campaign) : null;
+    $generation = Generation::factory()->for($pipeline)->for($campaign)->create(['status' => 'completed']);
+    $piece = Piece::factory()->for($generation)->create();
+    $page = Livewire::actingAs($editor)->test(Generator::class, ['campaign' => $campaign->slug])
+        ->fillForm(['inputs.describe_la_escena' => 'sin enviar']);
+    $requestId = $page->get('requestId');
+    $campaign->pipelines()->detach($pipeline);
+
+    $page->call('refreshResults')->assertSee('Esta campaña no tiene generador configurado.')
+        ->assertSee(route('media.piece', $piece), false)->assertDontSee('Generar serie')
+        ->assertSet('pipelineId', $pipeline->id)->assertSet('formRevision', 3)
+        ->assertSet('inputs.describe_la_escena', 'sin enviar')
+        ->call('generate')->assertNotified('Esta campaña no tiene generador configurado.')
+        ->assertSet('requestId', $requestId);
+
+    expect(Generation::count())->toBe(1);
+    Queue::assertNothingPushed();
+    if ($alternative !== null) {
+        $page->assertSee($alternative->label)->set('pipelineId', $alternative->id)
+            ->assertSet('inputs.describe_la_escena', null)->assertSet('formRevision', $alternative->config_revision)
+            ->assertSee('Generar serie');
+    }
+})->with([false, true]);

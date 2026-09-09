@@ -17,7 +17,7 @@ class EditPipeline extends EditRecord
 
     protected function getHeaderActions(): array
     {
-        return [PipelineActions::refresh(), PipelineActions::markReady(), PipelineActions::markNotReady(), DeleteAction::make()->label('Eliminar')];
+        return [PipelineActions::refresh(), DeleteAction::make()->label('Eliminar')];
     }
 
     protected function getFormActions(): array

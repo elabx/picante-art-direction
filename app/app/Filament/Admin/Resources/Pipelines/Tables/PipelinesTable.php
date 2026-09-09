@@ -21,7 +21,7 @@ class PipelinesTable
                 TextColumn::make('label')->label('Nombre')->searchable(),
                 TextColumn::make('kind')->label('Tipo')->badge()->formatStateUsing(fn ($state): string => PipelineActions::KINDS[$state->value]),
                 TextColumn::make('provider_ref')->label('Referencia del proveedor')->copyable(),
-                IconColumn::make('is_ready')->label('Lista')->boolean()
+                IconColumn::make('is_ready')->label('Disponible')->boolean()
                     ->tooltip(fn (Pipeline $record): string => implode("\n", $record->readiness_errors ?? [])),
                 TextColumn::make('campaigns_count')->label('Campañas')->counts('campaigns'),
             ])
@@ -31,8 +31,6 @@ class PipelinesTable
             ->recordActions([
                 EditAction::make()->label('Configurar'),
                 PipelineActions::refresh(),
-                PipelineActions::markReady(),
-                PipelineActions::markNotReady(),
                 DeleteAction::make()->label('Eliminar'),
             ]);
     }

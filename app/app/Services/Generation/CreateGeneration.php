@@ -175,7 +175,7 @@ final class CreateGeneration
                 DB::afterCommit(fn (): mixed => RunGenerationJob::dispatch($generation->id));
 
                 return $generation;
-            });
+            }, attempts: 3);
         } catch (QueryException $exception) {
             $existing = Generation::query()->where('request_id', $requestId)->first();
 

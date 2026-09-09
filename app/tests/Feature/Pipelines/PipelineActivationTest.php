@@ -171,3 +171,14 @@ it('sets a default generator only when it is a ready generator assigned to the c
     }
     expect($campaign->fresh()->default_pipeline_id)->toBe($generator->id);
 });
+
+it('clears defaults if marking an already ready app detects invalid persisted configuration', function (): void {
+    $campaign = Campaign::factory()->create();
+    $pipeline = readyGenerator($campaign);
+    $campaign->update(['default_pipeline_id' => $pipeline->id]);
+    $pipeline->update(['input_schema' => null]);
+
+    expect(fn () => app(PipelineActivation::class)->markReady($pipeline))->toThrow(ValidationException::class);
+    expect($pipeline->fresh()->is_ready)->toBeFalse()
+        ->and($campaign->fresh()->default_pipeline_id)->toBeNull();
+});
