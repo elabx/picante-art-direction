@@ -120,13 +120,9 @@ final class PipelineReadiness
             return false;
         }
 
-        $brandId = $pipeline->campaign()->value('brand_id');
-
-        return is_int($brandId)
-            && $pipeline->inputUploads()
-                ->whereKey($value['__upload'])
-                ->where('brand_id', $brandId)
-                ->exists();
+        return $pipeline->inputUploads()
+            ->whereKey($value['__upload'])
+            ->exists();
     }
 
     /**

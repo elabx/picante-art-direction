@@ -12,7 +12,7 @@ use Illuminate\Validation\ValidationException;
 
 function readyPipeline(PipelineKind $kind, ?Campaign $campaign = null): Pipeline
 {
-    $pipeline = Pipeline::factory()->for($campaign ?? Campaign::factory())->create([
+    $pipeline = Pipeline::factory()->create([
         'kind' => $kind,
         'input_schema' => ['properties' => ['image' => ['type' => 'string'], 'prompt' => ['type' => 'string']]],
     ]);
@@ -26,18 +26,22 @@ function readyPipeline(PipelineKind $kind, ?Campaign $campaign = null): Pipeline
         PipelineField::factory()->for($pipeline)->create(['name' => 'image', 'input_type' => InputType::Image, 'role' => FieldRole::Image]);
     }
 
+    if ($campaign !== null) {
+        attachPipeline($campaign, $pipeline);
+    }
+
     return $pipeline;
 }
 
-it('refuses to activate a pipeline that is not ready', function (): void {
+it('refuses to mark ready a pipeline that is not ready', function (): void {
     $pipeline = Pipeline::factory()->create(['input_schema' => null]);
 
-    expect(fn () => app(PipelineActivation::class)->activate($pipeline))
+    expect(fn () => app(PipelineActivation::class)->markReady($pipeline))
         ->toThrow(ValidationException::class);
-    expect($pipeline->fresh()->is_active)->toBeFalse();
+    expect($pipeline->fresh()->is_ready)->toBeFalse();
 });
 
-it('allows only one active editor per campaign and takes a campaign row lock', function (): void {
+it('marks multiple catalog editors ready under a pipeline row lock', function (): void {
     $sqls = [];
     DB::listen(function ($query) use (&$sqls): void {
         $sqls[] = $query->sql;
@@ -46,11 +50,11 @@ it('allows only one active editor per campaign and takes a campaign row lock', f
     $first = readyPipeline(PipelineKind::Editor, $campaign);
     $second = readyPipeline(PipelineKind::Editor, $campaign);
 
-    app(PipelineActivation::class)->activate($first);
+    app(PipelineActivation::class)->markReady($first);
 
-    expect(fn () => app(PipelineActivation::class)->activate($second))
-        ->toThrow(ValidationException::class)
-        ->and($campaign->pipelines()->where('is_active', true)->count())->toBe(1)
+    app(PipelineActivation::class)->markReady($second);
+
+    expect($campaign->pipelines()->where('is_ready', true)->count())->toBe(2)
         ->and(collect($sqls)->contains(fn (string $sql): bool => str_contains(strtolower($sql), 'for update')))->toBeTrue();
 });
 
@@ -58,11 +62,11 @@ it('allows one active editor in each campaign', function (): void {
     $first = readyPipeline(PipelineKind::Editor);
     $second = readyPipeline(PipelineKind::Editor);
 
-    app(PipelineActivation::class)->activate($first);
-    app(PipelineActivation::class)->activate($second);
+    app(PipelineActivation::class)->markReady($first);
+    app(PipelineActivation::class)->markReady($second);
 
-    expect($first->fresh()->is_active)->toBeTrue()
-        ->and($second->fresh()->is_active)->toBeTrue();
+    expect($first->fresh()->is_ready)->toBeTrue()
+        ->and($second->fresh()->is_ready)->toBeTrue();
 });
 
 it('allows multiple active generators in a campaign', function (): void {
@@ -70,49 +74,49 @@ it('allows multiple active generators in a campaign', function (): void {
     $first = readyPipeline(PipelineKind::Generator, $campaign);
     $second = readyPipeline(PipelineKind::Generator, $campaign);
 
-    app(PipelineActivation::class)->activate($first);
-    app(PipelineActivation::class)->activate($second);
+    app(PipelineActivation::class)->markReady($first);
+    app(PipelineActivation::class)->markReady($second);
 
-    expect($campaign->pipelines()->where('is_active', true)->count())->toBe(2);
+    expect($campaign->pipelines()->where('is_ready', true)->count())->toBe(2);
 });
 
 it('uses persisted readiness state instead of stale loaded field relations', function (): void {
     $pipeline = readyPipeline(PipelineKind::Editor)->load('fields');
     $pipeline->fields->firstWhere('role', FieldRole::Prompt)->update(['needs_configuration' => true]);
 
-    expect(fn () => app(PipelineActivation::class)->activate($pipeline))
+    expect(fn () => app(PipelineActivation::class)->markReady($pipeline))
         ->toThrow(ValidationException::class);
-    expect($pipeline->fresh()->is_active)->toBeFalse();
+    expect($pipeline->fresh()->is_ready)->toBeFalse();
 });
 
-it('allows idempotent activation of the same editor', function (): void {
+it('allows idempotent readiness of the same editor', function (): void {
     $pipeline = readyPipeline(PipelineKind::Editor);
     $activation = app(PipelineActivation::class);
 
-    $activation->activate($pipeline);
-    $activation->activate($pipeline);
+    $activation->markReady($pipeline);
+    $activation->markReady($pipeline);
 
-    expect($pipeline->fresh()->is_active)->toBeTrue();
+    expect($pipeline->fresh()->is_ready)->toBeTrue();
 });
 
-it('deactivates under the campaign lock and clears the default pipeline', function (): void {
+it('marks not ready under the pipeline lock and clears the default pipeline', function (): void {
     $campaign = Campaign::factory()->create();
     $pipeline = readyPipeline(PipelineKind::Generator, $campaign);
-    app(PipelineActivation::class)->activate($pipeline);
+    app(PipelineActivation::class)->markReady($pipeline);
     app(PipelineActivation::class)->setDefault($campaign, $pipeline);
 
-    app(PipelineActivation::class)->deactivate($pipeline);
+    app(PipelineActivation::class)->markNotReady($pipeline);
 
-    expect($pipeline->fresh()->is_active)->toBeFalse()
+    expect($pipeline->fresh()->is_ready)->toBeFalse()
         ->and($campaign->fresh()->default_pipeline_id)->toBeNull();
 });
 
 it('rejects a default pipeline from another campaign or of the wrong kind', function (): void {
     $campaign = Campaign::factory()->create();
     $other = readyPipeline(PipelineKind::Generator);
-    app(PipelineActivation::class)->activate($other);
+    app(PipelineActivation::class)->markReady($other);
     $editor = readyPipeline(PipelineKind::Editor, $campaign);
-    app(PipelineActivation::class)->activate($editor);
+    app(PipelineActivation::class)->markReady($editor);
 
     expect(fn () => app(PipelineActivation::class)->setDefault($campaign, $other))
         ->toThrow(ValidationException::class)
@@ -123,11 +127,47 @@ it('rejects a default pipeline from another campaign or of the wrong kind', func
 it('rechecks a stale generator before making it the default', function (): void {
     $campaign = Campaign::factory()->create();
     $pipeline = readyPipeline(PipelineKind::Generator, $campaign);
-    app(PipelineActivation::class)->activate($pipeline);
+    app(PipelineActivation::class)->markReady($pipeline);
     $stale = $pipeline->fresh();
-    $stale->fresh()->update(['is_active' => false]);
+    $stale->fresh()->update(['is_ready' => false]);
 
     expect(fn () => app(PipelineActivation::class)->setDefault($campaign, $stale))
         ->toThrow(ValidationException::class);
     expect($campaign->fresh()->default_pipeline_id)->toBeNull();
+});
+
+it('marks not ready, stores errors, and clears defaults in every campaign', function (): void {
+    $pipeline = readyPipeline(PipelineKind::Generator);
+    app(PipelineActivation::class)->markReady($pipeline);
+    $first = Campaign::factory()->create();
+    $second = Campaign::factory()->create();
+    attachPipeline($first, $pipeline);
+    attachPipeline($second, $pipeline);
+    $first->update(['default_pipeline_id' => $pipeline->id]);
+    $second->update(['default_pipeline_id' => $pipeline->id]);
+
+    app(PipelineActivation::class)->markNotReady($pipeline, ['Campo x: nuevo o modificado; revisa su configuración.']);
+
+    expect($pipeline->fresh()->is_ready)->toBeFalse()
+        ->and($pipeline->fresh()->readiness_errors)->toBe(['Campo x: nuevo o modificado; revisa su configuración.'])
+        ->and($first->fresh()->default_pipeline_id)->toBeNull()
+        ->and($second->fresh()->default_pipeline_id)->toBeNull()
+        ->and($first->pipelines()->count())->toBe(1);
+});
+
+it('sets a default generator only when it is a ready generator assigned to the campaign', function (): void {
+    $campaign = Campaign::factory()->create();
+    $generator = attachPipeline($campaign, Pipeline::factory()->generator()->ready()->create());
+    $unassigned = Pipeline::factory()->generator()->ready()->create();
+    $editor = attachPipeline($campaign, Pipeline::factory()->editor()->ready()->create());
+    $notReady = attachPipeline($campaign, Pipeline::factory()->generator()->create());
+
+    app(PipelineActivation::class)->setDefault($campaign, $generator);
+    expect($campaign->fresh()->default_pipeline_id)->toBe($generator->id);
+
+    foreach ([$unassigned, $editor, $notReady] as $invalid) {
+        expect(fn () => app(PipelineActivation::class)->setDefault($campaign, $invalid))
+            ->toThrow(ValidationException::class);
+    }
+    expect($campaign->fresh()->default_pipeline_id)->toBe($generator->id);
 });

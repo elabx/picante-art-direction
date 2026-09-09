@@ -4,6 +4,7 @@ use App\Enums\FieldRole;
 use App\Enums\FieldVisibility;
 use App\Enums\InputType;
 use App\Enums\PipelineKind;
+use App\Models\Campaign;
 use App\Models\InputUpload;
 use App\Models\Piece;
 use App\Models\Pipeline;
@@ -20,9 +21,9 @@ it('blocks activation and composition of unsupported root envelopes', function (
     PipelineField::factory()->for($pipeline)->create(['name' => 'prompt']);
 
     expect(implode(' ', app(PipelineReadiness::class)->evaluate($pipeline)))->toContain($keyword);
-    expect(fn () => app(PipelineActivation::class)->activate($pipeline))->toThrow(ValidationException::class);
+    expect(fn () => app(PipelineActivation::class)->markReady($pipeline))->toThrow(ValidationException::class);
     expect(fn () => app(InputComposer::class)->compose($pipeline, ['prompt' => 'hola']))->toThrow(ValidationException::class);
-    expect($pipeline->fresh()->is_active)->toBeFalse();
+    expect($pipeline->fresh()->is_ready)->toBeFalse();
 })->with([
     'union' => [['type' => 'object', 'oneOf' => [['required' => ['prompt']]]], 'oneOf'],
     'reference' => [['$ref' => '#/other'], '$ref'],
@@ -47,7 +48,7 @@ it('rejects semantic and binding overrides incompatible with transport', functio
     PipelineField::factory()->for($pipeline)->create(['name' => 'value', 'source_schema' => ['type' => $transport], 'input_type' => $semantic, 'role' => $role]);
 
     expect(implode(' ', app(PipelineReadiness::class)->evaluate($pipeline)))->toContain('value');
-    expect(fn () => app(PipelineActivation::class)->activate($pipeline))->toThrow(ValidationException::class);
+    expect(fn () => app(PipelineActivation::class)->markReady($pipeline))->toThrow(ValidationException::class);
     expect(fn () => app(InputComposer::class)->compose($pipeline, []))->toThrow(ValidationException::class);
 })->with([
     ['integer', InputType::Image, FieldRole::Image],
@@ -62,15 +63,17 @@ it('deactivates a generator and clears its default when an admin hides its requi
     $pipeline = pipelineWithProperties(['prompt' => ['type' => 'string']]);
     $field = PipelineField::factory()->for($pipeline)->create(['name' => 'prompt', 'role' => FieldRole::Prompt, 'required' => true]);
     $activation = app(PipelineActivation::class);
-    $activation->activate($pipeline);
-    $activation->setDefault($pipeline->campaign, $pipeline);
+    $activation->markReady($pipeline);
+    $campaign = Campaign::factory()->create();
+    attachPipeline($campaign, $pipeline);
+    $activation->setDefault($campaign, $pipeline);
 
     app(PipelineFieldConfiguration::class)->save($pipeline, $field, ['visibility' => FieldVisibility::Hidden->value], User::factory()->artDirector()->create());
 
-    expect($pipeline->fresh()->is_active)->toBeFalse()
-        ->and($pipeline->campaign->fresh()->default_pipeline_id)->toBeNull()
+    expect($pipeline->fresh()->is_ready)->toBeFalse()
+        ->and($campaign->fresh()->default_pipeline_id)->toBeNull()
         ->and(implode(' ', $pipeline->fresh()->readiness_errors))->toContain('prompt');
-    expect(fn () => $activation->activate($pipeline))->toThrow(ValidationException::class);
+    expect(fn () => $activation->markReady($pipeline))->toThrow(ValidationException::class);
     expect(fn () => app(InputComposer::class)->compose($pipeline->fresh(), []))->toThrow(ValidationException::class);
 });
 
@@ -80,9 +83,9 @@ it('preserves multiple string image overrides and no prompt on generators', func
         PipelineField::factory()->for($pipeline)->create(['name' => $name, 'source_schema' => $schema, 'input_type' => InputType::Image, 'role' => FieldRole::Image]);
     }
 
-    app(PipelineActivation::class)->activate($pipeline);
+    app(PipelineActivation::class)->markReady($pipeline);
 
-    expect($pipeline->fresh()->is_active)->toBeTrue()
+    expect($pipeline->fresh()->is_ready)->toBeTrue()
         ->and(app(InputComposer::class)->compose($pipeline, []))->toBe(['inputs' => [], 'uploadIds' => []]);
 });
 
@@ -103,7 +106,7 @@ it('accepts hidden required injected editor and upscaler values', function (Pipe
     }
     $piece = Piece::factory()->create(['width' => 1920, 'height' => 1080]);
 
-    app(PipelineActivation::class)->activate($pipeline);
+    app(PipelineActivation::class)->markReady($pipeline);
 
     expect(app(InputComposer::class)->compose($pipeline, [], $piece, 'ajusta la luz')['inputs'])
         ->toBe(['image' => ['__piece' => $piece->id]] + $expected);
@@ -233,9 +236,9 @@ it('rejects fixed values on bound fields', function (): void {
         ->toContain('Campo prompt: un campo vinculado no puede tener valor fijo.');
 });
 
-it('accepts a fixed image upload linked to the pipeline from its campaign brand', function (): void {
+it('accepts a fixed image upload linked to the pipeline from the catalog', function (): void {
     $pipeline = pipelineWithProperties(['referencia' => ['type' => 'string', 'format' => 'uri']]);
-    $upload = InputUpload::factory()->for($pipeline->campaign->brand)->create();
+    $upload = InputUpload::factory()->catalog()->create();
     $pipeline->inputUploads()->attach($upload);
     PipelineField::factory()->for($pipeline)->create([
         'name' => 'referencia',
@@ -249,14 +252,13 @@ it('accepts a fixed image upload linked to the pipeline from its campaign brand'
     expect(app(PipelineReadiness::class)->evaluate($pipeline->refresh()))->toBe([]);
 });
 
-it('rejects unlinked, foreign, and malformed fixed image upload references', function (): void {
+it('rejects unlinked and malformed fixed image upload references', function (): void {
     $pipeline = pipelineWithProperties(['referencia' => ['type' => 'string', 'format' => 'uri']]);
-    $sameBrandUnlinked = InputUpload::factory()->for($pipeline->campaign->brand)->create();
+    $sameBrandUnlinked = InputUpload::factory()->catalog()->create();
     $foreignLinked = InputUpload::factory()->create();
     $pipeline->inputUploads()->attach($foreignLinked);
     $references = [
         ['__upload' => $sameBrandUnlinked->id],
-        ['__upload' => $foreignLinked->id],
         ['__upload' => 999999],
         ['__upload' => 'not-an-id'],
         ['__upload' => $sameBrandUnlinked->id, 'extra' => true],
@@ -278,7 +280,6 @@ it('rejects unlinked, foreign, and malformed fixed image upload references', fun
             'Campo referencia_1: el valor fijo no es válido.',
             'Campo referencia_2: el valor fijo no es válido.',
             'Campo referencia_3: el valor fijo no es válido.',
-            'Campo referencia_4: el valor fijo no es válido.',
         );
 });
 
