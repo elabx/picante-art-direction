@@ -8,6 +8,7 @@ use Filament\Actions\Action;
 use Filament\Facades\Filament;
 use Filament\Pages\Page;
 use Filament\Panel;
+use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
@@ -23,6 +24,8 @@ class Campaigns extends Page implements HasTable
     protected static ?string $slug = '';
 
     protected static ?string $navigationLabel = 'Campañas';
+
+    protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedFolder;
 
     protected string $view = 'filament.app.pages.campaigns';
 

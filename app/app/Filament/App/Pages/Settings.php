@@ -13,6 +13,7 @@ use Filament\Pages\Page;
 use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Text;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
 use Livewire\Attributes\Locked;
 
 class Settings extends Page
@@ -20,6 +21,8 @@ class Settings extends Page
     protected static ?string $slug = 'ajustes';
 
     protected static ?string $navigationLabel = 'Ajustes';
+
+    protected static string|\BackedEnum|null $navigationIcon = Heroicon::OutlinedCog6Tooth;
 
     protected string $view = 'filament.app.pages.settings';
 

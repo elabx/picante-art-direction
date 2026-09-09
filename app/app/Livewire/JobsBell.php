@@ -37,6 +37,9 @@ class JobsBell extends Component implements HasActions, HasSchemas
     #[Locked]
     public int $unseen = 0;
 
+    #[Locked]
+    public int $activeCount = 0;
+
     /** @var list<int> */
     #[Locked]
     public array $displayedIds = [];
@@ -89,7 +92,9 @@ class JobsBell extends Component implements HasActions, HasSchemas
 
     public function render(): View
     {
+        $this->activeCount = $this->query()->whereNotIn('status', ['completed', 'failed'])->count();
         $jobs = $this->query()->with(['pieces' => fn ($query) => $query->orderBy('index')->orderBy('id')->limit(3)])
+            ->orderByRaw("CASE WHEN status IN ('completed', 'failed') THEN 1 ELSE 0 END")
             ->latest()->latest('id')->limit(30)->get();
         $this->displayedIds = $jobs->modelKeys();
         $this->unseen = $jobs->filter(fn (Generation $job): bool => $job->status->isTerminal() && $job->seen_at === null)->count();

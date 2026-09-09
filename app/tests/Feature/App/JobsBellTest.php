@@ -14,6 +14,19 @@ use Livewire\Livewire;
 
 afterEach(fn () => Livewire::flushState());
 
+it('uses a notification slide-over and separates active work from recent results', function (): void {
+    [$editor, , $campaign] = editorInCampaign();
+    Generation::factory()->for($campaign)->for($editor)->create(['status' => 'processing']);
+    $done = Generation::factory()->for($campaign)->for($editor)->create(['status' => 'completed']);
+    $bell = Livewire::actingAs($editor)->test(JobsBell::class)
+        ->assertSee('Cola de trabajos')->assertSee('En curso')->assertSee('Recientes')
+        ->assertSee('fi-modal-slide-over', false)->assertSee('x-modal-opened', false)
+        ->assertDontSee('fi-dropdown-trigger', false)->assertSet('activeCount', 1);
+    expect($done->fresh()->seen_at)->toBeNull();
+    $bell->call('markSeen')->assertSet('unseen', 0)->assertSet('activeCount', 1);
+    expect($done->fresh()->seen_at)->not->toBeNull();
+});
+
 it('counts and marks only the displayed terminal jobs for this user and tenant', function (): void {
     [$editor, , $campaign] = editorInCampaign();
     $pipeline = Pipeline::factory()->for($campaign)->create();
@@ -32,6 +45,14 @@ it('counts and marks only the displayed terminal jobs for this user and tenant',
     }
 });
 
+it('keeps older active work visible ahead of a full page of recent results', function (): void {
+    [$editor, , $campaign] = editorInCampaign();
+    $running = Generation::factory()->for($campaign)->for($editor)->create(['status' => 'processing', 'created_at' => now()->subDay()]);
+    Generation::factory()->count(30)->for($campaign)->for($editor)->create(['status' => 'completed']);
+    $bell = Livewire::actingAs($editor)->test(JobsBell::class)->assertSet('activeCount', 1);
+    expect($bell->get('displayedIds'))->toContain($running->id)->toHaveCount(30);
+});
+
 it('renders job summaries statuses and at most three completed thumbnails', function (): void {
     [$editor, , $campaign] = editorInCampaign();
     $pipeline = Pipeline::factory()->for($campaign)->create();
@@ -39,7 +60,7 @@ it('renders job summaries statuses and at most three completed thumbnails', func
     $pieces = Piece::factory()->count(4)->for($completed)->create();
     Generation::factory()->for($pipeline)->for($editor)->create(['kind' => 'edit', 'status' => 'downloading', 'execution_snapshot' => snapshot(['inputs' => ['q' => 'quita la caja'], 'bindings' => ['prompt' => 'q']])]);
     Generation::factory()->for($pipeline)->for($editor)->create(['kind' => 'upscale', 'status' => 'failed', 'error_message' => '<script>falló</script>']);
-    $bell = Livewire::actingAs($editor)->test(JobsBell::class)->assertSee('Trabajos · Cola')->assertSee('1 imágenes')->assertSee('quita la caja')->assertSee('Descargando')->assertSee('Lista')->assertSee('Falló')->assertSee('Edición')->assertSee('4K')->assertSee('&lt;script&gt;falló&lt;/script&gt;', false)->assertSee('Puedes seguir trabajando; te avisamos al terminar.');
+    $bell = Livewire::actingAs($editor)->test(JobsBell::class)->assertSee('Cola de trabajos')->assertSee('1 imágenes')->assertSee('quita la caja')->assertSee('Descargando')->assertSee('Lista')->assertSee('Falló')->assertSee('Edición')->assertSee('4K')->assertSee('&lt;script&gt;falló&lt;/script&gt;', false)->assertSee('Puedes seguir trabajando; te avisamos al terminar.');
     foreach ($pieces->take(3) as $piece) {
         $bell->assertSee(route('media.piece', $piece), false);
     }
@@ -89,7 +110,7 @@ it('keeps displayed ownership and restart IDs locked', function (string $propert
     [$editor] = editorInCampaign();
     expect(fn () => Livewire::actingAs($editor)->test(JobsBell::class)->set($property, $value))
         ->toThrow(CannotUpdateLockedPropertyException::class);
-})->with([['displayedIds', [999]], ['brandId', 999], ['restartRequestId', 'forged']]);
+})->with([['displayedIds', [999]], ['brandId', 999], ['restartRequestId', 'forged'], ['activeCount', 99]]);
 
 it('replays confirmed restart delivery without creating a second replacement', function (): void {
     Queue::fake();

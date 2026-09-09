@@ -30,3 +30,13 @@ Validation: demo regression failed first on legacy dimensions, then passed with 
 Continue browser acceptance for gallery filters, actual download, jobs bell seen state, foreground switching, settings/logout, authorization revocation, mobile layout, and expiry recovery. English editor page titles/Stats and raw select accessibility translation keys were observed and remain to address. No blanket browser acceptance claim. Demo seeder with separate configuration was requested and then explicitly deferred by the user.
 
 Real Krea quality/4K qualification and Cloud/AWS deployment remain deferred. Nothing pushed or deployed.
+
+## Queue panel follow-up
+
+Replaced the dropdown with the same native Filament modal pattern used by database notifications: right slide-over, body teleport, sticky header, autofocus on the panel, and standard close/focus behavior. Consulted installed Blueprint action/custom-page guidance, Boost SearchDocs, and the installed database-notifications Blade implementation. The `x-modal-opened` event now marks displayed terminal jobs seen instead of inspecting a dropdown's inline display style.
+
+The queue icon is `queue-list`; active count takes badge precedence over unseen results. Active work is ordered ahead of recent terminal jobs so it cannot be displaced by a full page of newer results. Sections are En curso and Recientes, with colored status badges and result thumbnails. Added folder/settings sidebar icons.
+
+Browser verified: right-side slide-over, rendered sidebar icons, marking displayed results seen (database count zero), and thumbnail transition closing the queue and opening the piece viewer. Regression suite: 453 passed, one skipped, 1,959 assertions. Campaign 1 has no saved cover, explaining the empty Portada cell.
+
+AI setup audit: Boost/Blueprint packages and documentation bridge are present, but `app/boost.json` targets Claude Code with four generic skills. The installed agent skills do not include the `filament-development` / `planning-filament` skills recommended by the current Filament AI guide. Installation/configuration follow-up remains pending; reading package guidance is not equivalent to fully configured agent skills.
