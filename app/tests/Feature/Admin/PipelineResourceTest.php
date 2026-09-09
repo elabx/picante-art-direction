@@ -3,6 +3,8 @@
 use App\Filament\Admin\Resources\Pipelines\Pages\EditPipeline;
 use App\Filament\Admin\Resources\Pipelines\RelationManagers\FieldsRelationManager;
 use App\Models\Campaign;
+use App\Models\Generation;
+use App\Models\Piece;
 use App\Models\Pipeline;
 use App\Models\PipelineField;
 use App\Models\User;
@@ -118,6 +120,8 @@ it('renders fields in nonstale order with Spanish read-only schema columns', fun
         ->assertDontSee('<script>schema()</script>', false);
 });
 
+use App\Filament\Admin\Resources\Campaigns\Pages\EditCampaign;
+use App\Filament\Admin\Resources\Campaigns\RelationManagers\GenerationsRelationManager;
 use App\Filament\Admin\Resources\Pipelines\Pages\ListPipelines;
 
 it('lists the catalog with readiness and campaign counts', function (): void {
@@ -203,4 +207,26 @@ it('does not offer deletion for apps assigned to archived campaigns', function (
     $campaign->delete();
 
     Livewire::test(ListPipelines::class)->assertTableActionHidden('delete', $pipeline);
+});
+
+it('preserves generated pieces and immutable snapshots when deleting an unassigned app', function (): void {
+    $this->actingAs(User::factory()->artDirector()->create());
+    $generation = Generation::factory()->create();
+    $pipeline = $generation->pipeline;
+    $piece = Piece::factory()->create(['generation_id' => $generation->id]);
+    $snapshot = $generation->fresh()->execution_snapshot;
+    $pipeline->campaigns()->detach();
+
+    Livewire::test(ListPipelines::class)->callTableAction('delete', $pipeline);
+
+    expect(Pipeline::query()->whereKey($pipeline->id)->exists())->toBeFalse()
+        ->and($generation->fresh()->pipeline_id)->toBeNull()
+        ->and($generation->fresh()->execution_snapshot)->toBe($snapshot)
+        ->and($piece->fresh()->generation_id)->toBe($generation->id)
+        ->and($piece->fresh()->campaign_id)->toBe($generation->campaign_id);
+
+    Livewire::test(GenerationsRelationManager::class, [
+        'ownerRecord' => $generation->campaign,
+        'pageClass' => EditCampaign::class,
+    ])->assertSee('Test');
 });

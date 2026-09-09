@@ -29,7 +29,7 @@ class GenerationsRelationManager extends RelationManager
     {
         return $table->columns([
             TextColumn::make('user.name')->label('Usuario'),
-            TextColumn::make('pipeline.label')->label('Flujo'),
+            TextColumn::make('execution_snapshot.pipeline_label')->label('App'),
             TextColumn::make('kind')->label('Tipo')->formatStateUsing(fn ($state): string => ['series' => 'Serie', 'edit' => 'Edición', 'upscale' => 'Escalado'][$state->value]),
             TextColumn::make('status')->label('Estado')->badge()->formatStateUsing(fn ($state): string => self::STATUSES[$state->value]),
             TextColumn::make('failure_reason')->label('Motivo del fallo')->formatStateUsing(fn ($state): string => [

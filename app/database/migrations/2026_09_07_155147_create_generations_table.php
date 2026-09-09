@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('generations', function (Blueprint $table) {
             $table->id();
             $table->foreignId('campaign_id')->constrained()->cascadeOnDelete();
-            $table->foreignId('pipeline_id')->constrained();
+            $table->foreignId('pipeline_id')->nullable()->constrained()->nullOnDelete();
             $table->foreignId('user_id')->constrained();
             $table->string('kind', 10);
             $table->unsignedBigInteger('parent_piece_id')->nullable();
