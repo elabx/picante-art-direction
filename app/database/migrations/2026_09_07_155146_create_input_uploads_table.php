@@ -13,7 +13,7 @@ return new class extends Migration
     {
         Schema::create('input_uploads', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('brand_id')->constrained();
+            $table->foreignId('brand_id')->nullable()->constrained();
             $table->foreignId('user_id')->constrained();
             $table->string('storage_path')->unique();
             $table->string('mime_type', 50);

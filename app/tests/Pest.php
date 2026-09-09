@@ -3,7 +3,6 @@
 use App\Engines\FakeEngine;
 use App\Enums\FieldRole;
 use App\Enums\InputType;
-use App\Enums\PipelineKind;
 use App\Models\Brand;
 use App\Models\Campaign;
 use App\Models\Pipeline;
@@ -64,12 +63,16 @@ function snapshot(array $overrides = []): array
     return GenerationFactory::snapshot($overrides);
 }
 
+function attachPipeline(Campaign $campaign, Pipeline $pipeline, int $sortOrder = 0): Pipeline
+{
+    $campaign->pipelines()->attach($pipeline->id, ['sort_order' => $sortOrder]);
+
+    return $pipeline;
+}
+
 function readyGenerator(Campaign $campaign): Pipeline
 {
-    $pipeline = Pipeline::factory()->for($campaign)->create([
-        'kind' => PipelineKind::Generator,
-        'is_active' => true,
-        'readiness_errors' => [],
+    $pipeline = Pipeline::factory()->generator()->ready()->create([
         'input_schema' => ['properties' => []],
         'config_revision' => 3,
     ]);
@@ -80,6 +83,8 @@ function readyGenerator(Campaign $campaign): Pipeline
         'role' => FieldRole::Prompt,
         'required' => true,
     ]);
+
+    attachPipeline($campaign, $pipeline);
 
     return $pipeline->refresh();
 }

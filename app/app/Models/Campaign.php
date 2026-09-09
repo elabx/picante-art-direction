@@ -7,6 +7,7 @@ use Database\Factories\CampaignFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 
@@ -39,9 +40,13 @@ class Campaign extends Model
         return $this->belongsTo(Brand::class);
     }
 
-    public function pipelines(): HasMany
+    public function pipelines(): BelongsToMany
     {
-        return $this->hasMany(Pipeline::class)->orderBy('sort_order');
+        return $this->belongsToMany(Pipeline::class)
+            ->withPivot('sort_order')
+            ->withTimestamps()
+            ->orderBy('campaign_pipeline.sort_order')
+            ->orderBy('pipelines.id');
     }
 
     public function generations(): HasMany
@@ -59,26 +64,26 @@ class Campaign extends Model
         return $this->belongsTo(Pipeline::class, 'default_pipeline_id');
     }
 
-    public function activeGenerators(): HasMany
+    public function activeGenerators(): BelongsToMany
     {
         return $this->pipelines()
-            ->where('kind', PipelineKind::Generator)
-            ->where('is_active', true);
+            ->where('pipelines.kind', PipelineKind::Generator)
+            ->where('pipelines.is_ready', true);
     }
 
     public function activeEditor(): ?Pipeline
     {
         return $this->pipelines()
-            ->where('kind', PipelineKind::Editor)
-            ->where('is_active', true)
+            ->where('pipelines.kind', PipelineKind::Editor)
+            ->where('pipelines.is_ready', true)
             ->first();
     }
 
     public function activeUpscaler(): ?Pipeline
     {
         return $this->pipelines()
-            ->where('kind', PipelineKind::Upscaler)
-            ->where('is_active', true)
+            ->where('pipelines.kind', PipelineKind::Upscaler)
+            ->where('pipelines.is_ready', true)
             ->first();
     }
 }

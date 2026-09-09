@@ -30,4 +30,9 @@ class InputUploadFactory extends Factory
             'finalized_at' => null,
         ];
     }
+
+    public function catalog(): static
+    {
+        return $this->state(['brand_id' => null, 'storage_path' => 'catalog/'.fake()->uuid().'.png']);
+    }
 }

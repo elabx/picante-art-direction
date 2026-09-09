@@ -6,7 +6,6 @@ use App\Enums\PipelineKind;
 use Database\Factories\PipelineFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -16,7 +15,6 @@ class Pipeline extends Model
     use HasFactory;
 
     protected $fillable = [
-        'campaign_id',
         'kind',
         'engine',
         'provider_ref',
@@ -25,8 +23,7 @@ class Pipeline extends Model
         'schema_fetched_at',
         'config_revision',
         'readiness_errors',
-        'sort_order',
-        'is_active',
+        'is_ready',
     ];
 
     protected function casts(): array
@@ -36,13 +33,13 @@ class Pipeline extends Model
             'input_schema' => 'array',
             'readiness_errors' => 'array',
             'schema_fetched_at' => 'datetime',
-            'is_active' => 'boolean',
+            'is_ready' => 'boolean',
         ];
     }
 
-    public function campaign(): BelongsTo
+    public function campaigns(): BelongsToMany
     {
-        return $this->belongsTo(Campaign::class);
+        return $this->belongsToMany(Campaign::class)->withPivot('sort_order')->withTimestamps();
     }
 
     public function fields(): HasMany
@@ -64,6 +61,6 @@ class Pipeline extends Model
 
     public function isReady(): bool
     {
-        return $this->is_active && empty($this->readiness_errors);
+        return $this->is_ready;
     }
 }

@@ -13,7 +13,6 @@ return new class extends Migration
     {
         Schema::create('pipelines', function (Blueprint $table) {
             $table->id();
-            $table->foreignId('campaign_id')->constrained()->cascadeOnDelete();
             $table->string('kind', 20);
             $table->string('engine', 20)->default('krea');
             $table->string('provider_ref');
@@ -22,9 +21,9 @@ return new class extends Migration
             $table->timestamp('schema_fetched_at')->nullable();
             $table->unsignedInteger('config_revision')->default(1);
             $table->json('readiness_errors')->nullable();
-            $table->unsignedInteger('sort_order')->default(0);
-            $table->boolean('is_active')->default(false);
+            $table->boolean('is_ready')->default(false);
             $table->timestamps();
+            $table->unique(['engine', 'provider_ref']);
         });
     }
 

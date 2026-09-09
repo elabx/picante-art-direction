@@ -2,7 +2,7 @@
 
 namespace Database\Factories;
 
-use App\Models\Campaign;
+use App\Enums\PipelineKind;
 use App\Models\Pipeline;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -12,14 +12,11 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 class PipelineFactory extends Factory
 {
     /**
-     * Define the model's default state.
-     *
      * @return array<string, mixed>
      */
     public function definition(): array
     {
         return [
-            'campaign_id' => Campaign::factory(),
             'kind' => 'generator',
             'engine' => 'krea',
             'provider_ref' => fake()->uuid(),
@@ -28,8 +25,27 @@ class PipelineFactory extends Factory
             'schema_fetched_at' => null,
             'config_revision' => 1,
             'readiness_errors' => null,
-            'sort_order' => 0,
-            'is_active' => false,
+            'is_ready' => false,
         ];
+    }
+
+    public function generator(): static
+    {
+        return $this->state(['kind' => PipelineKind::Generator]);
+    }
+
+    public function editor(): static
+    {
+        return $this->state(['kind' => PipelineKind::Editor]);
+    }
+
+    public function upscaler(): static
+    {
+        return $this->state(['kind' => PipelineKind::Upscaler]);
+    }
+
+    public function ready(): static
+    {
+        return $this->state(['is_ready' => true, 'readiness_errors' => []]);
     }
 }
