@@ -42,7 +42,7 @@ class AppPanelProvider extends PanelProvider
             ->tenantMenu(fn (): bool => auth()->user()->brands()->count() > 1)
             ->spa()
             ->renderHook(PanelsRenderHook::BODY_END, fn (): string => Filament::getTenant() instanceof Brand ? Blade::render('@livewire(\'piece-viewer\')') : '')
-            ->renderHook(PanelsRenderHook::TOPBAR_END, fn (): string => Filament::getTenant() instanceof Brand ? Blade::render('@livewire(\'jobs-bell\')') : '')
+            ->renderHook(PanelsRenderHook::GLOBAL_SEARCH_AFTER, fn (): string => Filament::getTenant() instanceof Brand ? Blade::render('@livewire(\'jobs-bell\')') : '')
             ->colors([
                 'primary' => Color::Red,
             ])
