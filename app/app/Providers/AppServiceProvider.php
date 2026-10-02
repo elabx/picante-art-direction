@@ -7,6 +7,7 @@ use App\Engines\FakeEngine;
 use App\Services\Media\CloudFrontSignedUrlProvider;
 use App\Services\Media\PresignedS3UrlProvider;
 use App\Services\Media\SignedUrlProvider;
+use App\Support\CloudObjectStorage;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\ServiceProvider;
 
@@ -17,6 +18,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        CloudObjectStorage::configure();
         $this->app->singleton(EngineResolver::class);
         if ($this->app->environment('local') && config('media.fake_engine')) {
             $this->app->bind(FakeEngine::class, fn (): FakeEngine => FakeEngine::localDemo());
