@@ -41,7 +41,6 @@ DDEV inicia dos daemons: `queue-worker` (`queue:work --timeout=150 --tries=1 --s
 | --- | --- | --- |
 | `media:reconcile` | Cada minuto | Recupera trabajo local pendiente sin volver a enviar una generación al proveedor. |
 | `media:clean-inputs` | Cada hora | Marca cargas finalizadas hace más de 24 horas sin referencias. En una ejecución posterior, tras más de 10 minutos de gracia, vuelve a comprobar las referencias bajo bloqueo. |
-| `queue:prune-failed` | Diario | Elimina registros de trabajos fallidos con la retención predeterminada de Laravel: 24 horas. |
 
 Los tres comandos evitan ejecuciones solapadas. Consulta el calendario con `ddev artisan schedule:list --no-interaction`. La limpieza es **horaria**, conforme a la decisión de integración, aunque el encabezado inicial del plan decía diaria. Conserva cargas referenciadas por generaciones o pipelines; al enlazar una carga se bloquea su fila y se retira la marca. Se confirma la eliminación de la fila antes de intentar borrar el objeto. Si falla el almacenamiento, el comando devuelve error y muestra únicamente el ID de la carga; puede quedar un objeto huérfano. No barre prefijos de piezas, portadas o logotipos. Los temporales de Livewire tienen su propia expiración de un día en `inputs/tmp/`.
 

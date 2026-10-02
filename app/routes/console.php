@@ -10,4 +10,3 @@ Artisan::command('inspire', function () {
 
 Schedule::command('media:reconcile')->everyMinute()->withoutOverlapping();
 Schedule::command('media:clean-inputs')->hourly()->withoutOverlapping();
-Schedule::command('queue:prune-failed')->daily()->withoutOverlapping();
