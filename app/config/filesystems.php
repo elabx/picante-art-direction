@@ -70,7 +70,6 @@ return [
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'root' => 'inputs',
-            'visibility' => 'private',
             'throw' => true,
         ],
 
@@ -84,7 +83,6 @@ return [
             'endpoint' => env('AWS_ENDPOINT'),
             'use_path_style_endpoint' => env('AWS_USE_PATH_STYLE_ENDPOINT', false),
             'root' => 'pieces',
-            'visibility' => 'private',
             'throw' => true,
         ],
 
