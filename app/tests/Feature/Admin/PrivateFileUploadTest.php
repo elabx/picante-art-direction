@@ -28,7 +28,7 @@ it('routes finalized cover previews through their owning media endpoint', functi
     $field = Schema::make()->record($record)->components([
         PrivateFileUpload::make('cover_path')->disk('pieces'),
     ])->getComponents()[0];
-    expect($field->getUploadedFile('covers/own.png', null)['url'])->toBe(route('media.cover', $record));
+    expect($field->getUploadedFile('covers/own.png', null)['url'])->toBe(route('media.cover', [$record, 'filename' => 'own.png']));
 });
 
 it('does not fall back to a public URL if a temporary preview cannot be signed', function (): void {
@@ -120,5 +120,18 @@ it('routes finalized input upload previews through their owning media endpoint',
     PipelineField::factory()->for($pipeline)->create(['name' => 'imagen', 'input_type' => 'image']);
     $field = Schema::make()->components(app(PipelineFormBuilder::class)->components($pipeline))->getComponents()[0];
 
-    expect($field->getUploadedFile($upload->storage_path, null)['url'])->toBe(route('media.upload', $upload));
+    expect($field->getUploadedFile($upload->storage_path, null)['url'])->toBe(route('media.upload', [$upload, 'filename' => 'finalized.png']));
+});
+
+it('ends finalized logo previews with the stored file name so the uploader shows it', function (): void {
+    Storage::fake('pieces')->put('brands/01JLOGO.png', 'image');
+    $record = Brand::factory()->create(['logo_path' => 'brands/01JLOGO.png']);
+    $field = Schema::make()->record($record)->components([
+        PrivateFileUpload::make('logo_path')->disk('pieces'),
+    ])->getComponents()[0];
+
+    $url = $field->getUploadedFile('brands/01JLOGO.png', null)['url'];
+
+    expect($url)->toBe(route('media.logo', [$record, 'filename' => '01JLOGO.png']))
+        ->and(basename(parse_url($url, PHP_URL_PATH)))->toBe('01JLOGO.png');
 });

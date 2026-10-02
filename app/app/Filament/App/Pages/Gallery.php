@@ -25,6 +25,8 @@ use Livewire\Attributes\On;
 
 class Gallery extends Page implements HasTable
 {
+    protected static ?string $title = 'Galería';
+
     use InteractsWithTable;
 
     protected static ?string $slug = 'campaigns/{campaign}/gallery';

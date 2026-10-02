@@ -153,3 +153,17 @@ it('keeps snapshot catalog images available after removing the app and its fixed
     $this->actingAs(User::factory()->editor()->create())->get(route('media.upload', $upload))->assertForbidden();
     $this->actingAs(User::factory()->artDirector()->create())->get(route('media.upload', $upload))->assertRedirect();
 });
+
+it('serves logos and covers with a trailing file name under the same authorization', function (): void {
+    $editor = User::factory()->editor()->create();
+    $outsider = User::factory()->editor()->create();
+    $brand = Brand::factory()->create(['logo_path' => 'brands/logo.png']);
+    $brand->users()->attach($editor);
+    $campaign = Campaign::factory()->for($brand)->create(['cover_path' => 'covers/cover.png']);
+
+    $this->actingAs($editor)->get(route('media.logo', [$brand, 'filename' => 'logo.png']))
+        ->assertRedirect('https://signed.example/pieces/brands/logo.png');
+    $this->actingAs($editor)->get(route('media.cover', [$campaign, 'filename' => 'cover.png']))
+        ->assertRedirect('https://signed.example/pieces/covers/cover.png');
+    $this->actingAs($outsider)->get(route('media.logo', [$brand, 'filename' => 'logo.png']))->assertForbidden();
+});

@@ -28,6 +28,8 @@ class CampaignResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Campañas';
 
+    protected static bool $hasTitleCaseModelLabel = false;
+
     public static function form(Schema $schema): Schema
     {
         return CampaignForm::configure($schema);

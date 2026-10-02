@@ -24,6 +24,8 @@ class PipelineResource extends Resource
 
     protected static ?string $pluralModelLabel = 'Catálogo de apps';
 
+    protected static bool $hasTitleCaseModelLabel = false;
+
     protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedSquares2x2;
 
     protected static ?string $navigationLabel = 'Catálogo de apps';

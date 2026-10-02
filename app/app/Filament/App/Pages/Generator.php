@@ -39,6 +39,8 @@ use Livewire\Features\SupportFileUploads\TemporaryUploadedFile;
 
 class Generator extends Page
 {
+    protected static ?string $title = 'Generador';
+
     use RestrictsFileUploadsToSchemaComponents;
 
     protected static ?string $slug = 'campaigns/{campaign}';

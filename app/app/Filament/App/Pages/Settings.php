@@ -18,6 +18,8 @@ use Livewire\Attributes\Locked;
 
 class Settings extends Page
 {
+    protected static ?string $title = 'Ajustes';
+
     protected static ?string $slug = 'ajustes';
 
     protected static ?string $navigationLabel = 'Ajustes';

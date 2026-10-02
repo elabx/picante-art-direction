@@ -77,19 +77,30 @@ class PrivateFileUpload extends FileUpload
         $record = $this->getRecord()?->fresh();
 
         if ($record instanceof Campaign && $this->getName() === 'cover_path' && $record->cover_path === $file && Route::has('media.cover')) {
-            return route('media.cover', $record);
+            return route('media.cover', [$record, 'filename' => self::urlFileName($file)]);
         }
 
         if ($record instanceof Brand && $this->getName() === 'logo_path' && $record->logo_path === $file && Route::has('media.logo')) {
-            return route('media.logo', $record);
+            return route('media.logo', [$record, 'filename' => self::urlFileName($file)]);
         }
 
         $upload = InputUpload::query()->where('storage_path', $file)->first();
 
         if ($upload !== null && Route::has('media.upload')) {
-            return route('media.upload', $upload);
+            return route('media.upload', [$upload, 'filename' => self::urlFileName($file)]);
         }
 
         return null;
+    }
+
+    /**
+     * The uploader names images after the last URL segment, so finalized
+     * previews end with the stored file name instead of the record ID.
+     */
+    private static function urlFileName(string $file): ?string
+    {
+        $name = basename($file);
+
+        return preg_match('/\A[A-Za-z0-9._-]+\z/', $name) === 1 ? $name : null;
     }
 }

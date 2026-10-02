@@ -19,6 +19,8 @@ use Illuminate\Support\HtmlString;
 
 class Campaigns extends Page implements HasTable
 {
+    protected static ?string $title = 'Campañas';
+
     use InteractsWithTable;
 
     protected static ?string $slug = '';
